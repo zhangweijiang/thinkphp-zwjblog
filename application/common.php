@@ -1,7 +1,6 @@
 <?php
 
 // 公共助手函数
-
 if (!function_exists('__')) {
 
     /**

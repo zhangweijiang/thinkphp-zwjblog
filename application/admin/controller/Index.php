@@ -7,7 +7,7 @@ use app\common\controller\Backend;
 use think\Config;
 use think\Hook;
 use think\Validate;
-
+use think\Env;
 /**
  * 后台首页
  * @internal
@@ -29,6 +29,7 @@ class Index extends Backend
      */
     public function index()
     {
+
         //左侧菜单
         list($menulist, $navlist, $fixedmenu, $referermenu) = $this->auth->getSidebar([
             'dashboard' => 'hot',

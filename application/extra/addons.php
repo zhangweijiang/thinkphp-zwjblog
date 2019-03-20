@@ -28,14 +28,17 @@ return array (
     'sms_send' => 
     array (
       0 => 'qcloudsms',
+      1 => 'smsbao',
     ),
     'sms_notice' => 
     array (
       0 => 'qcloudsms',
+      1 => 'smsbao',
     ),
     'sms_check' => 
     array (
       0 => 'qcloudsms',
+      1 => 'smsbao',
     ),
   ),
   'route' => 
