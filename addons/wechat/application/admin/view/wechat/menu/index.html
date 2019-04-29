@@ -1,4 +1,15 @@
 <link href="__CDN__/assets/css/wechat/menu.css?v={$site['version']}" rel="stylesheet">
+<style>
+    .form-item dl dt {
+        width: 120px;
+    }
+    .form-item dl dd {
+        margin-left: 120px;
+    }
+    .form-item dl dd  input {
+        font-size:12px;
+    }
+</style>
 <div class="panel panel-default panel-intro">
     {:build_heading()}
 
@@ -10,9 +21,6 @@
                         <div class="mobile-menu-preview">
                             <div class="mobile-head-title">{$site.name}</div>
                             <ul class="menu-list" id="menu-list">
-                                <li class="add-item extra" id="add-item">
-                                    <a href="javascript:;" class="menu-link" title="添加菜单"><i class="weixin-icon add-gray"></i></a>
-                                </li>
                             </ul>
                         </div>
                         <div class="weixin-body">
@@ -23,43 +31,11 @@
                                             <h4 id="current-item-name">添加子菜单</h4>
                                             <div class="item-delete"><a href="javascript:;" id="item_delete">删除菜单</a></div>
                                         </div>
-                                        <div style="margin-top: 20px;">
-                                            <dl>
-                                                <dt id="current-item-option"><span class="is-sub-item">子</span>菜单标题：</dt>
-                                                <dd><div class="input-box"><input id="item_title" name="item-title" type="text" value=""></div></dd>
-                                            </dl>
-                                            <dl class="is-item">
-                                                <dt id="current-item-type"><span class="is-sub-item">子</span>菜单内容：</dt>
-                                                <dd>
-                                                    <input id="type1" type="radio" name="type" value="click"><label for="type1" data-editing="1"><span class="lbl_content">发送消息</span></label>
-                                                    <input id="type2" type="radio" name="type" value="view" ><label for="type2"  data-editing="1"><span class="lbl_content">跳转网页</span></label>
-                                                    <input id="type3" type="radio" name="type" value="scancode_push"><label for="type3" data-editing="1"><span class="lbl_content">扫码推</span></label>
-                                                    <input id="type4" type="radio" name="type" value="scancode_waitmsg"><label for="type4" data-editing="1"><span class="lbl_content">扫码推提示框</span></label>
-                                                    <input id="type5" type="radio" name="type" value="pic_sysphoto"><label for="type5" data-editing="1"><span class="lbl_content">拍照发图</span></label>
-                                                    <input id="type6" type="radio" name="type" value="pic_photo_or_album"><label for="type6" data-editing="1"><span class="lbl_content">拍照相册发图</span></label>
-                                                    <input id="type7" type="radio" name="type" value="pic_weixin"><label for="type7" data-editing="1"><span class="lbl_content">相册发图</span></label>
-                                                    <input id="type8" type="radio" name="type" value="location_select"><label for="type8" data-editing="1"><span class="lbl_content">地理位置选择</span></label>
-                                                </dd>
-                                            </dl>
-                                            <div id="menu-content" class="is-item">
-                                                <div class="viewbox is-view">
-                                                    <p class="menu-content-tips">点击该<span class="is-sub-item">子</span>菜单会跳到以下链接</p>
-                                                    <dl>
-                                                        <dt>页面地址：</dt>
-                                                        <dd><div class="input-box"><input type="text" id="url" name="url"></div>
-                                                        </dd>
-                                                    </dl>
-                                                </div>
-                                                <div class="clickbox is-click" style="display: none;">
-                                                    <input type="hidden" name="key" id="key" value="" />
-                                                    <span class="create-click"><a href="{:url('wechat.response/select')}" id="select-resources"><i class="weixin-icon big-add-gray"></i><strong>选择现有资源</strong></a></span>
-                                                    <span class="create-click"><a href="{:url('wechat.response/add')}" id="add-resources"><i class="weixin-icon big-add-gray"></i><strong>添加新资源</strong></a></span>
-                                                </div>
-                                            </div>
+                                        <div style="margin-top: 20px;" id="item-body">
+
                                         </div>
                                     </form>
                                 </div>
-
                             </div>
                             <div class="no-weixin-content">
                                 点击左侧菜单进行编辑操作
@@ -70,7 +46,9 @@
                         <div class="col-xs-4 text-center text-danger">
                             <i class="fa fa-lightbulb-o"></i> <small>可直接拖动菜单排序</small>
                         </div>
-                        <div class="col-xs-8 text-center"><a href="javascript:;" id="menuSyn" class="btn btn-danger">保存并发布</a></div>
+                        <div class="col-xs-8 text-center">
+                            <div class="text-center"><a href="javascript:;" id="menuSyn" class="btn btn-danger">保存并发布</a></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -78,6 +56,94 @@
         </div>
     </div>
 </div>
+<script type="text/html" id="menutpl">
+    <%for(var i=0; i< menu.length; i++){%>
+        <%var first=menu[i];%>
+        <li id="menu-<%=i%>" class="menu-item" data-type="<%=first['type']%>" data-key="<%=first['key']%>" data-name="<%=first['name']%>" data-url="<%=first['url']%>" data-appid="<%=first['appid']%>" data-pagepath="<%=first['pagepath']%>">
+            <a href="javascript:;" class="menu-link">
+                <i class="icon-menu-dot"></i> <i class="weixin-icon sort-gray"></i> <span class="title"><%=first['name']%></span>
+            </a>
+
+            <div class="sub-menu-box" style="display:none;">
+                <ul class="sub-menu-list">
+                    <%if(typeof first['sub_button']!='undefined'){%>
+                    <%for(var j=0; j< first['sub_button'].length; j++){%>
+                    <%var second=first['sub_button'][j];%>
+                    <li id="sub-menu-<%=j%>" class="sub-menu-item" data-type="<%=second['type']%>" data-key="<%=second['key']%>" data-name="<%=second['name']%>" data-url="<%=second['url']%>" data-appid="<%=second['appid']%>" data-pagepath="<%=second['pagepath']%>"> <a href="javascript:;"> <i class="weixin-icon sort-gray"></i><span class="sub-title"><%=second['name']%></span></a> </li>
+                    <%}%>
+                    <%}%>
+                    <li class="add-sub-item"><a href="javascript:;" title="添加子菜单"><span class=" "><i class="weixin-icon add-gray"></i></span></a></li>
+                </ul>
+                <i class="arrow arrow-out"></i> <i class="arrow arrow-in"></i>
+            </div>
+        </li>
+    <%}%>
+    <li class="add-item extra" id="add-item">
+        <a href="javascript:;" class="menu-link" title="添加菜单"><i class="weixin-icon add-gray"></i></a>
+    </li>
+</script>
+<script type="text/html" id="itemtpl">
+    <dl>
+        <dt id="current-item-option"><span class="is-sub-item <%=first?'hidden':''%>">子</span>菜单标题：</dt>
+        <dd><div class="input-box"><input id="item_title" name="name" type="text" value="<%=name%>"></div></dd>
+    </dl>
+    <%if(!hasChild){%>
+        <dl class="is-item">
+            <dt id="current-item-type"><span class="is-sub-item <%=first?'hidden':''%>">子</span>菜单内容：</dt>
+            <dd>
+                <%for(var i=0;i< typeList.length; i++){%>
+                    <input id="type<%=i%>" type="radio" name="type" value="<%=typeList[i]['name']%>" <%=typeList[i]['name']==type?'checked':''%> /><label for="type<%=i%>"><span class="lbl_content"><%=typeList[i]['title']%></span></label>
+                <%}%>
+            </dd>
+        </dl>
+        <div id="menu-content" class="is-item">
+            <%if(type=='view'){%>
+            <div class="viewbox is-view">
+                <p class="menu-content-tips">点击该<span class="is-sub-item <%=first?'hidden':''%>">子</span>菜单会跳到以下链接</p>
+                <dl>
+                    <dt>页面地址：</dt>
+                    <dd><div class="input-box"><input type="text" name="url" value="<%=url%>"></div>
+                    </dd>
+                </dl>
+            </div>
+            <%}%>
+            <%if(type!='view'&&type!='miniprogram'){%>
+            <div class="clickbox is-click">
+                <input type="hidden" name="key" id="key" value="<%=key%>" />
+                <span class="create-click">
+                    <%if(keytitle){%>
+                    <div class="keytitle">资源名:<%=keytitle%></div>
+                    <%}%>
+                    <a href="{:url('wechat.response/select')}" id="select-resources"><i class="weixin-icon big-add-gray"></i><strong>选择现有资源</strong></a>
+                </span>
+                <span class="create-click">
+                    <a href="{:url('wechat.response/add')}" id="add-resources"><i class="weixin-icon big-add-gray"></i><strong>添加新资源</strong></a>
+                </span>
+            </div>
+            <%}%>
+            <%if(type=='miniprogram'){%>
+            <div class="viewbox is-miniprogram">
+                <p class="menu-content-tips">点击该<span class="is-sub-item <%=first?'':'hidden'%>">子</span>菜单会跳到以下小程序</p>
+                <dl>
+                    <dt>小程序ID：</dt>
+                    <dd><div class="input-box"><input type="text" id="appid" name="appid" placeholder="在小程序后台获取" value="<%=appid%>"></div>
+                    </dd>
+                </dl>
+                <dl>
+                    <dt>小程序页面路径：</dt>
+                    <dd><div class="input-box"><input type="text" id="pagepath" name="pagepath" placeholder="小程序页面路径" value="<%=pagepath%>"></div>
+                    </dd>
+                </dl>
+                <dl>
+                    <dt>页面地址：</dt>
+                    <dd><div class="input-box"><input type="text" name="url" placeholder="页面地址，当不支持小程序时会跳转此页面" value="<%=url%>"></div>
+                    </dd>
+                </dl>
+            </div>
+            <%}%>
+        </div>
+    <%}%>
+</script>
 <script type="text/javascript">
     var menu = {:json_encode($menu, JSON_UNESCAPED_UNICODE)};
     var responselist = {:json_encode($responselist, JSON_UNESCAPED_UNICODE)};

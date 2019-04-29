@@ -10,14 +10,17 @@ use think\console\input\Option;
 use think\console\Output;
 use think\Db;
 use think\Exception;
+use think\exception\ErrorException;
 use think\Lang;
 use think\Loader;
 
 class Crud extends Command
 {
-
     protected $stubList = [];
 
+    protected $internalKeywords = [
+        'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class', 'clone', 'const', 'continue', 'declare', 'default', 'die', 'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare', 'endfor', 'endforeach', 'endif', 'endswitch', 'endwhile', 'eval', 'exit', 'extends', 'final', 'for', 'foreach', 'function', 'global', 'goto', 'if', 'implements', 'include', 'include_once', 'instanceof', 'insteadof', 'interface', 'isset', 'list', 'namespace', 'new', 'or', 'print', 'private', 'protected', 'public', 'require', 'require_once', 'return', 'static', 'switch', 'throw', 'trait', 'try', 'unset', 'use', 'var', 'while', 'xor'
+    ];
     /**
      * Selectpage搜索字段关联
      */
@@ -75,6 +78,7 @@ class Crud extends Command
         'url'    => 'url',
         'image'  => 'image',
         'images' => 'images',
+        'avatar' => 'image',
         'switch' => 'toggle',
         'time'   => ['type' => ['int', 'timestamp'], 'name' => 'datetime']
     ];
@@ -92,7 +96,7 @@ class Crud extends Command
     /**
      * 保留字段
      */
-    protected $reservedField = ['admin_id', 'createtime', 'updatetime'];
+    protected $reservedField = ['admin_id'];
 
     /**
      * 排除字段
@@ -111,9 +115,32 @@ class Crud extends Command
     protected $headingFilterField = 'status';
 
     /**
+     * 添加时间字段
+     * @var string
+     */
+    protected $createTimeField = 'createtime';
+
+    /**
+     * 更新时间字段
+     * @var string
+     */
+    protected $updateTimeField = 'updatetime';
+
+    /**
+     * 软删除时间字段
+     * @var string
+     */
+    protected $deleteTimeField = 'deletetime';
+
+    /**
      * 编辑器的Class
      */
     protected $editorClass = 'editor';
+
+    /**
+     * langList的key最长字节数
+     */
+    protected $fieldMaxLen = 0;
 
     protected function configure()
     {
@@ -146,18 +173,22 @@ class Crud extends Command
             ->addOption('sortfield', null, Option::VALUE_OPTIONAL, 'sort field', null)
             ->addOption('headingfilterfield', null, Option::VALUE_OPTIONAL, 'heading filter field', null)
             ->addOption('editorclass', null, Option::VALUE_OPTIONAL, 'automatically generate editor class', null)
+            ->addOption('db', null, Option::VALUE_OPTIONAL, 'database config name', 'database')
             ->setDescription('Build CRUD controller and model from table');
     }
 
     protected function execute(Input $input, Output $output)
     {
         $adminPath = dirname(__DIR__) . DS;
+        //数据库
+        $db = $input->getOption('db');
         //表名
         $table = $input->getOption('table') ?: '';
         //自定义控制器
         $controller = $input->getOption('controller');
         //自定义模型
         $model = $input->getOption('model');
+        $model = $model ? $model : $controller;
         //验证器类
         $validate = $model;
         //自定义显示字段
@@ -209,35 +240,51 @@ class Crud extends Command
         $headingfilterfield = $input->getOption('headingfilterfield');
         //编辑器Class
         $editorclass = $input->getOption('editorclass');
-        if ($setcheckboxsuffix)
+        if ($setcheckboxsuffix) {
             $this->setCheckboxSuffix = $setcheckboxsuffix;
-        if ($enumradiosuffix)
+        }
+        if ($enumradiosuffix) {
             $this->enumRadioSuffix = $enumradiosuffix;
-        if ($imagefield)
+        }
+        if ($imagefield) {
             $this->imageField = $imagefield;
-        if ($filefield)
+        }
+        if ($filefield) {
             $this->fileField = $filefield;
-        if ($intdatesuffix)
+        }
+        if ($intdatesuffix) {
             $this->intDateSuffix = $intdatesuffix;
-        if ($switchsuffix)
+        }
+        if ($switchsuffix) {
             $this->switchSuffix = $switchsuffix;
-        if ($citysuffix)
+        }
+        if ($citysuffix) {
             $this->citySuffix = $citysuffix;
-        if ($selectpagesuffix)
+        }
+        if ($selectpagesuffix) {
             $this->selectpageSuffix = $selectpagesuffix;
-        if ($selectpagessuffix)
+        }
+        if ($selectpagessuffix) {
             $this->selectpagesSuffix = $selectpagessuffix;
-        if ($ignoreFields)
+        }
+        if ($ignoreFields) {
             $this->ignoreFields = $ignoreFields;
-        if ($editorclass)
+        }
+        if ($editorclass) {
             $this->editorClass = $editorclass;
-        if ($sortfield)
+        }
+        if ($sortfield) {
             $this->sortField = $sortfield;
-        if ($headingfilterfield)
+        }
+        if ($headingfilterfield) {
             $this->headingFilterField = $headingfilterfield;
+        }
 
-        $dbname = Config::get('database.database');
-        $prefix = Config::get('database.prefix');
+        $this->reservedField = array_merge($this->reservedField, [$this->createTimeField, $this->updateTimeField, $this->deleteTimeField]);
+
+        $dbconnect = Db::connect($db);
+        $dbname = Config::get($db . '.database');
+        $prefix = Config::get($db . '.prefix');
 
         //模块
         $moduleName = 'admin';
@@ -248,11 +295,11 @@ class Crud extends Command
         $modelName = $table = stripos($table, $prefix) === 0 ? substr($table, strlen($prefix)) : $table;
         $modelTableType = 'table';
         $modelTableTypeName = $modelTableName = $modelName;
-        $modelTableInfo = Db::query("SHOW TABLE STATUS LIKE '{$modelTableName}'", [], TRUE);
+        $modelTableInfo = $dbconnect->query("SHOW TABLE STATUS LIKE '{$modelTableName}'", [], true);
         if (!$modelTableInfo) {
             $modelTableType = 'name';
             $modelTableName = $prefix . $modelName;
-            $modelTableInfo = Db::query("SHOW TABLE STATUS LIKE '{$modelTableName}'", [], TRUE);
+            $modelTableInfo = $dbconnect->query("SHOW TABLE STATUS LIKE '{$modelTableName}'", [], true);
             if (!$modelTableInfo) {
                 throw new Exception("table not found");
             }
@@ -269,11 +316,11 @@ class Crud extends Command
                 $relationName = stripos($relationTable, $prefix) === 0 ? substr($relationTable, strlen($prefix)) : $relationTable;
                 $relationTableType = 'table';
                 $relationTableTypeName = $relationTableName = $relationName;
-                $relationTableInfo = Db::query("SHOW TABLE STATUS LIKE '{$relationTableName}'", [], TRUE);
+                $relationTableInfo = $dbconnect->query("SHOW TABLE STATUS LIKE '{$relationTableName}'", [], true);
                 if (!$relationTableInfo) {
                     $relationTableType = 'name';
                     $relationTableName = $prefix . $relationName;
-                    $relationTableInfo = Db::query("SHOW TABLE STATUS LIKE '{$relationTableName}'", [], TRUE);
+                    $relationTableInfo = $dbconnect->query("SHOW TABLE STATUS LIKE '{$relationTableName}'", [], true);
                     if (!$relationTableInfo) {
                         throw new Exception("relation table not found");
                     }
@@ -286,6 +333,8 @@ class Crud extends Command
                 $relations[] = [
                     //关联表基础名
                     'relationName'          => $relationName,
+                    //关联表类命名空间
+                    'relationNamespace'     => $relationNamespace,
                     //关联模型名
                     'relationModel'         => $relationModel,
                     //关联文件
@@ -321,23 +370,32 @@ class Crud extends Command
         //验证器
         list($validateNamespace, $validateName, $validateFile, $validateArr) = $this->getValidateData($validateModuleName, $validate, $table);
 
-        $controllerUrl = strtolower(implode('/', $controllerArr));
-        $controllerBaseName = strtolower(implode(DS, $controllerArr));
+        //处理基础文件名，取消所有下划线并转换为小写
+        $baseNameArr = $controllerArr;
+        $baseFileName = Loader::parseName(array_pop($baseNameArr), 0);
+        array_push($baseNameArr, $baseFileName);
+        $controllerBaseName = strtolower(implode(DS, $baseNameArr));
+        $controllerUrl = strtolower(implode('/', $baseNameArr));
 
         //视图文件
-        $viewDir = $adminPath . 'view' . DS . $controllerBaseName . DS;
+        $viewArr = $controllerArr;
+        $lastValue = array_pop($viewArr);
+        $viewArr[] = Loader::parseName($lastValue, 0);
+        array_unshift($viewArr, 'view');
+        $viewDir = $adminPath . strtolower(implode(DS, $viewArr)) . DS;
 
         //最终将生成的文件路径
         $javascriptFile = ROOT_PATH . 'public' . DS . 'assets' . DS . 'js' . DS . 'backend' . DS . $controllerBaseName . '.js';
         $addFile = $viewDir . 'add.html';
         $editFile = $viewDir . 'edit.html';
         $indexFile = $viewDir . 'index.html';
+        $recyclebinFile = $viewDir . 'recyclebin.html';
         $langFile = $adminPath . 'lang' . DS . Lang::detect() . DS . $controllerBaseName . '.php';
 
         //是否为删除模式
         $delete = $input->getOption('delete');
         if ($delete) {
-            $readyFiles = [$controllerFile, $modelFile, $validateFile, $addFile, $editFile, $indexFile, $langFile, $javascriptFile];
+            $readyFiles = [$controllerFile, $modelFile, $validateFile, $addFile, $editFile, $indexFile, $recyclebinFile, $langFile, $javascriptFile];
             foreach ($readyFiles as $k => $v) {
                 $output->warning($v);
             }
@@ -349,15 +407,25 @@ class Crud extends Command
                 }
             }
             foreach ($readyFiles as $k => $v) {
-                if (file_exists($v))
+                if (file_exists($v)) {
                     unlink($v);
+                }
                 //删除空文件夹
-                if ($v == $modelFile) {
-                    $this->removeEmptyBaseDir($v, $modelArr);
-                } else if ($v == $validateFile) {
-                    $this->removeEmptyBaseDir($v, $validateArr);
-                } else {
-                    $this->removeEmptyBaseDir($v, $controllerArr);
+                switch ($v) {
+                    case $modelFile:
+                        $this->removeEmptyBaseDir($v, $modelArr);
+                        break;
+                    case $validateFile:
+                        $this->removeEmptyBaseDir($v, $validateArr);
+                        break;
+                    case $addFile:
+                    case $editFile:
+                    case $indexFile:
+                    case $recyclebinFile:
+                        $this->removeEmptyBaseDir($v, $viewArr);
+                        break;
+                    default:
+                        $this->removeEmptyBaseDir($v, $controllerArr);
                 }
             }
 
@@ -387,7 +455,7 @@ class Crud extends Command
             . "WHERE TABLE_SCHEMA = ? AND table_name = ? "
             . "ORDER BY ORDINAL_POSITION";
         //加载主表的列
-        $columnList = Db::query($sql, [$dbname, $modelTableName]);
+        $columnList = $dbconnect->query($sql, [$dbname, $modelTableName]);
         $fieldArr = [];
         foreach ($columnList as $k => $v) {
             $fieldArr[] = $v['COLUMN_NAME'];
@@ -395,7 +463,7 @@ class Crud extends Command
 
         // 加载关联表的列
         foreach ($relations as $index => &$relation) {
-            $relationColumnList = Db::query($sql, [$dbname, $relation['relationTableName']]);
+            $relationColumnList = $dbconnect->query($sql, [$dbname, $relation['relationTableName']]);
 
             $relationFieldList = [];
             foreach ($relationColumnList as $k => $v) {
@@ -428,7 +496,7 @@ class Crud extends Command
         $langList = [];
         $field = 'id';
         $order = 'id';
-        $priDefined = FALSE;
+        $priDefined = false;
         $priKey = '';
         $relationPrimaryKey = '';
         foreach ($columnList as $k => $v) {
@@ -467,6 +535,7 @@ class Crud extends Command
             }
             $relation['relationForeignKey'] = $relationForeignKey;
             $relation['relationPrimaryKey'] = $relationPrimaryKey;
+            $relation['relationClassName'] = $modelNamespace != $relation['relationNamespace'] ? $relation['relationNamespace'] . '\\' . $relation['relationName'] : $relation['relationName'];
         }
         unset($relation);
 
@@ -478,6 +547,7 @@ class Crud extends Command
             $appendAttrList = [];
             $controllerAssignList = [];
             $headingHtml = '{:build_heading()}';
+            $recyclebinHtml = '';
 
             //循环所有字段,开始构造视图的HTML和JS信息
             foreach ($columnList as $k => $v) {
@@ -500,7 +570,7 @@ class Crud extends Command
                     $langList[] = $this->getLangItem($field, $v['COLUMN_COMMENT']);
                 }
                 $inputType = '';
-                //createtime和updatetime是保留字段不能修改和添加
+                //保留字段不能修改和添加
                 if ($v['COLUMN_KEY'] != 'PRI' && !in_array($field, $this->reservedField) && !in_array($field, $this->ignoreFields)) {
                     $inputType = $this->getFieldType($v);
 
@@ -528,7 +598,7 @@ class Crud extends Command
 
                         $this->getEnum($getEnumArr, $controllerAssignList, $field, $itemArr, $v['DATA_TYPE'] == 'set' ? 'multiple' : 'select');
 
-                        $itemArr = $this->getLangArray($itemArr, FALSE);
+                        $itemArr = $this->getLangArray($itemArr, false);
                         //添加一个获取器
                         $this->getAttr($getAttrArr, $field, $v['DATA_TYPE'] == 'set' ? 'multiple' : 'select');
                         if ($v['DATA_TYPE'] == 'set') {
@@ -537,28 +607,29 @@ class Crud extends Command
                         $this->appendAttr($appendAttrList, $field);
                         $formAddElement = $this->getReplacedStub('html/select', ['field' => $field, 'fieldName' => $fieldName, 'fieldList' => $this->getFieldListName($field), 'attrStr' => Form::attributes($attrArr), 'selectedValue' => $defaultValue]);
                         $formEditElement = $this->getReplacedStub('html/select', ['field' => $field, 'fieldName' => $fieldName, 'fieldList' => $this->getFieldListName($field), 'attrStr' => Form::attributes($attrArr), 'selectedValue' => "\$row.{$field}"]);
-                    } else if ($inputType == 'datetime') {
+                    } elseif ($inputType == 'datetime') {
                         $cssClassArr[] = 'datetimepicker';
                         $attrArr['class'] = implode(' ', $cssClassArr);
                         $format = "YYYY-MM-DD HH:mm:ss";
                         $phpFormat = "Y-m-d H:i:s";
                         $fieldFunc = '';
                         switch ($v['DATA_TYPE']) {
-                            case 'year';
+                            case 'year':
                                 $format = "YYYY";
                                 $phpFormat = 'Y';
                                 break;
-                            case 'date';
+                            case 'date':
                                 $format = "YYYY-MM-DD";
                                 $phpFormat = 'Y-m-d';
                                 break;
-                            case 'time';
+                            case 'time':
                                 $format = "HH:mm:ss";
                                 $phpFormat = 'H:i:s';
                                 break;
-                            case 'timestamp';
+                            case 'timestamp':
                                 $fieldFunc = 'datetime';
-                            case 'datetime';
+                            // no break
+                            case 'datetime':
                                 $format = "YYYY-MM-DD HH:mm:ss";
                                 $phpFormat = 'Y-m-d H:i:s';
                                 break;
@@ -572,16 +643,15 @@ class Crud extends Command
                         $defaultDateTime = "{:date('{$phpFormat}')}";
                         $attrArr['data-date-format'] = $format;
                         $attrArr['data-use-current'] = "true";
-                        $fieldFunc = $fieldFunc ? "|{$fieldFunc}" : "";
                         $formAddElement = Form::text($fieldName, $defaultDateTime, $attrArr);
-                        $formEditElement = Form::text($fieldName, "{\$row.{$field}{$fieldFunc}}", $attrArr);
-                    } else if ($inputType == 'checkbox' || $inputType == 'radio') {
+                        $formEditElement = Form::text($fieldName, ($fieldFunc ? "{:\$row.{$field}?{$fieldFunc}(\$row.{$field}):''}" : "{\$row.{$field}{$fieldFunc}}"), $attrArr);
+                    } elseif ($inputType == 'checkbox' || $inputType == 'radio') {
                         unset($attrArr['data-rule']);
                         $fieldName = $inputType == 'checkbox' ? $fieldName .= "[]" : $fieldName;
                         $attrArr['name'] = "row[{$fieldName}]";
 
                         $this->getEnum($getEnumArr, $controllerAssignList, $field, $itemArr, $inputType);
-                        $itemArr = $this->getLangArray($itemArr, FALSE);
+                        $itemArr = $this->getLangArray($itemArr, false);
                         //添加一个获取器
                         $this->getAttr($getAttrArr, $field, $inputType);
                         if ($inputType == 'checkbox') {
@@ -592,13 +662,13 @@ class Crud extends Command
 
                         $formAddElement = $this->getReplacedStub('html/' . $inputType, ['field' => $field, 'fieldName' => $fieldName, 'fieldList' => $this->getFieldListName($field), 'attrStr' => Form::attributes($attrArr), 'selectedValue' => $defaultValue]);
                         $formEditElement = $this->getReplacedStub('html/' . $inputType, ['field' => $field, 'fieldName' => $fieldName, 'fieldList' => $this->getFieldListName($field), 'attrStr' => Form::attributes($attrArr), 'selectedValue' => "\$row.{$field}"]);
-                    } else if ($inputType == 'textarea') {
+                    } elseif ($inputType == 'textarea') {
                         $cssClassArr[] = $this->isMatchSuffix($field, $this->editorSuffix) ? $this->editorClass : '';
                         $attrArr['class'] = implode(' ', $cssClassArr);
                         $attrArr['rows'] = 5;
                         $formAddElement = Form::textarea($fieldName, $defaultValue, $attrArr);
                         $formEditElement = Form::textarea($fieldName, $editValue, $attrArr);
-                    } else if ($inputType == 'switch') {
+                    } elseif ($inputType == 'switch') {
                         unset($attrArr['data-rule']);
                         if ($defaultValue === '1' || $defaultValue === 'Y') {
                             $yes = $defaultValue;
@@ -613,7 +683,7 @@ class Crud extends Command
                         $stateNoClass = 'fa-flip-horizontal text-gray';
                         $formAddElement = $this->getReplacedStub('html/' . $inputType, ['field' => $field, 'fieldName' => $fieldName, 'fieldYes' => $yes, 'fieldNo' => $no, 'attrStr' => Form::attributes($attrArr), 'fieldValue' => $defaultValue, 'fieldSwitchClass' => $defaultValue == $no ? $stateNoClass : '']);
                         $formEditElement = $this->getReplacedStub('html/' . $inputType, ['field' => $field, 'fieldName' => $fieldName, 'fieldYes' => $yes, 'fieldNo' => $no, 'attrStr' => Form::attributes($attrArr), 'fieldValue' => "{\$row.{$field}}", 'fieldSwitchClass' => "{eq name=\"\$row.{$field}\" value=\"{$no}\"}fa-flip-horizontal text-gray{/eq}"]);
-                    } else if ($inputType == 'citypicker') {
+                    } elseif ($inputType == 'citypicker') {
                         $attrArr['class'] = implode(' ', $cssClassArr);
                         $attrArr['data-toggle'] = "city-picker";
                         $formAddElement = sprintf("<div class='control-relative'>%s</div>", Form::input('text', $fieldName, $defaultValue, $attrArr));
@@ -686,8 +756,12 @@ class Crud extends Command
                 if ($v['DATA_TYPE'] != 'text') {
                     //主键
                     if ($v['COLUMN_KEY'] == 'PRI' && !$priDefined) {
-                        $priDefined = TRUE;
+                        $priDefined = true;
                         $javascriptList[] = "{checkbox: true}";
+                    }
+                    if ($this->deleteTimeField == $field) {
+                        $recyclebinHtml = $this->getReplacedStub('html/recyclebin-html', ['controllerUrl' => $controllerUrl]);
+                        continue;
                     }
                     if (!$fields || in_array($field, explode(',', $fields))) {
                         //构造JS列信息
@@ -729,6 +803,15 @@ class Crud extends Command
             $editList = implode("\n", array_filter($editList));
             $javascriptList = implode(",\n", array_filter($javascriptList));
             $langList = implode(",\n", array_filter($langList));
+            //数组等号对齐
+            $langList = array_filter(explode(",\n", $langList . ",\n"));
+            foreach ($langList as &$line) {
+                if (preg_match("/^\s+'([^']+)'\s*=>\s*'([^']+)'\s*/is", $line, $matches)) {
+                    $line = "    '{$matches[1]}'" . str_pad('=>', ($this->fieldMaxLen - strlen($matches[1]) + 3), ' ', STR_PAD_LEFT) . " '{$matches[2]}'";
+                }
+            }
+            unset($line);
+            $langList = implode(",\n", array_filter($langList));
 
             //表注释
             $tableComment = $modelTableInfo['Comment'];
@@ -739,8 +822,8 @@ class Crud extends Command
                 $modelInit = $this->getReplacedStub('mixins' . DS . 'modelinit', ['order' => $order]);
             }
 
-
             $data = [
+                'databaseConfigName'      => $db,
                 'controllerNamespace'     => $controllerNamespace,
                 'modelNamespace'          => $modelNamespace,
                 'validateNamespace'       => $validateNamespace,
@@ -762,14 +845,19 @@ class Crud extends Command
                 'editList'                => $editList,
                 'javascriptList'          => $javascriptList,
                 'langList'                => $langList,
-                'modelAutoWriteTimestamp' => in_array('createtime', $fieldArr) || in_array('updatetime', $fieldArr) ? "'int'" : 'false',
-                'createTime'              => in_array('createtime', $fieldArr) ? "'createtime'" : 'false',
-                'updateTime'              => in_array('updatetime', $fieldArr) ? "'updatetime'" : 'false',
+                'sofeDeleteClassPath'     => in_array($this->deleteTimeField, $fieldArr) ? "use traits\model\SoftDelete;" : '',
+                'softDelete'              => in_array($this->deleteTimeField, $fieldArr) ? "use SoftDelete;" : '',
+                'modelAutoWriteTimestamp' => in_array($this->createTimeField, $fieldArr) || in_array($this->updateTimeField, $fieldArr) ? "'int'" : 'false',
+                'createTime'              => in_array($this->createTimeField, $fieldArr) ? "'{$this->createTimeField}'" : 'false',
+                'updateTime'              => in_array($this->updateTimeField, $fieldArr) ? "'{$this->updateTimeField}'" : 'false',
+                'deleteTime'              => in_array($this->deleteTimeField, $fieldArr) ? "'{$this->deleteTimeField}'" : 'false',
                 'relationSearch'          => $relations ? 'true' : 'false',
                 'relationWithList'        => '',
                 'relationMethodList'      => '',
                 'controllerIndex'         => '',
+                'recyclebinJs'            => '',
                 'headingHtml'             => $headingHtml,
+                'recyclebinHtml'          => $recyclebinHtml,
                 'visibleFieldList'        => $fields ? "\$row->visible(['" . implode("','", array_filter(explode(',', $fields))) . "']);" : '',
                 'appendAttrList'          => implode(",\n", $appendAttrList),
                 'getEnumList'             => implode("\n\n", $getEnumArr),
@@ -789,7 +877,6 @@ class Crud extends Command
                     $relation['relationMode'] = $relation['relationMode'] == 'hasone' ? 'hasOne' : 'belongsTo';
 
                     //关联字段
-                    $relation['relationForeignKey'] = $relation['relationForeignKey'];
                     $relation['relationPrimaryKey'] = $relation['relationPrimaryKey'] ? $relation['relationPrimaryKey'] : $priKey;
 
                     //预载入的方法
@@ -817,41 +904,43 @@ class Crud extends Command
 
                 //需要重写index方法
                 $data['controllerIndex'] = $this->getReplacedStub('controllerindex', $data);
-
-            } else if ($fields) {
+            } elseif ($fields) {
                 $data = array_merge($data, ['relationWithList' => '', 'relationMethodList' => '', 'relationVisibleFieldList' => '']);
                 //需要重写index方法
                 $data['controllerIndex'] = $this->getReplacedStub('controllerindex', $data);
             }
 
             // 生成控制器文件
-            $result = $this->writeToFile('controller', $data, $controllerFile);
+            $this->writeToFile('controller', $data, $controllerFile);
             // 生成模型文件
-            $result = $this->writeToFile('model', $data, $modelFile);
+            $this->writeToFile('model', $data, $modelFile);
 
             if ($relations) {
                 foreach ($relations as $i => $relation) {
                     $relation['modelNamespace'] = $data['modelNamespace'];
                     if (!is_file($relation['relationFile'])) {
                         // 生成关联模型文件
-                        $result = $this->writeToFile('relationmodel', $relation, $relation['relationFile']);
+                        $this->writeToFile('relationmodel', $relation, $relation['relationFile']);
                     }
                 }
-
             }
             // 生成验证文件
-            $result = $this->writeToFile('validate', $data, $validateFile);
+            $this->writeToFile('validate', $data, $validateFile);
             // 生成视图文件
-            $result = $this->writeToFile('add', $data, $addFile);
-            $result = $this->writeToFile('edit', $data, $editFile);
-            $result = $this->writeToFile('index', $data, $indexFile);
-            // 生成JS文件
-            $result = $this->writeToFile('javascript', $data, $javascriptFile);
-            // 生成语言文件
-            if ($langList) {
-                $result = $this->writeToFile('lang', $data, $langFile);
+            $this->writeToFile('add', $data, $addFile);
+            $this->writeToFile('edit', $data, $editFile);
+            $this->writeToFile('index', $data, $indexFile);
+            if ($recyclebinHtml) {
+                $this->writeToFile('recyclebin', $data, $recyclebinFile);
+                $recyclebinTitle = in_array('title', $fieldArr) ? 'title' : (in_array('name', $fieldArr) ? 'name' : '');
+                $recyclebinTitleJs = $recyclebinTitle ? "\n                        {field: '{$recyclebinTitle}', title: __('" . (ucfirst($recyclebinTitle)) . "'), align: 'left'}," : '';
+                $data['recyclebinJs'] = $this->getReplacedStub('mixins/recyclebinjs', ['recyclebinTitleJs' => $recyclebinTitleJs, 'controllerUrl' => $controllerUrl]);
             }
-        } catch (\think\exception\ErrorException $e) {
+            // 生成JS文件
+            $this->writeToFile('javascript', $data, $javascriptFile);
+            // 生成语言文件
+            $this->writeToFile('lang', $data, $langFile);
+        } catch (ErrorException $e) {
             throw new Exception("Code: " . $e->getCode() . "\nLine: " . $e->getLine() . "\nMessage: " . $e->getMessage() . "\nFile: " . $e->getFile());
         }
 
@@ -865,8 +954,9 @@ class Crud extends Command
 
     protected function getEnum(&$getEnum, &$controllerAssignList, $field, $itemArr = '', $inputType = '')
     {
-        if (!in_array($inputType, ['datetime', 'select', 'multiple', 'checkbox', 'radio']))
+        if (!in_array($inputType, ['datetime', 'select', 'multiple', 'checkbox', 'radio'])) {
             return;
+        }
         $fieldList = $this->getFieldListName($field);
         $methodName = 'get' . ucfirst($fieldList);
         foreach ($itemArr as $k => &$v) {
@@ -878,7 +968,7 @@ class Crud extends Command
     public function {$methodName}()
     {
         return [{$itemString}];
-    }     
+    }
 EOD;
         $controllerAssignList[] = <<<EOD
         \$this->view->assign("{$fieldList}", \$this->model->{$methodName}());
@@ -887,22 +977,24 @@ EOD;
 
     protected function getAttr(&$getAttr, $field, $inputType = '')
     {
-        if (!in_array($inputType, ['datetime', 'select', 'multiple', 'checkbox', 'radio']))
+        if (!in_array($inputType, ['datetime', 'select', 'multiple', 'checkbox', 'radio'])) {
             return;
+        }
         $attrField = ucfirst($this->getCamelizeName($field));
         $getAttr[] = $this->getReplacedStub("mixins" . DS . $inputType, ['field' => $field, 'methodName' => "get{$attrField}TextAttr", 'listMethodName' => "get{$attrField}List"]);
     }
 
     protected function setAttr(&$setAttr, $field, $inputType = '')
     {
-        if (!in_array($inputType, ['datetime', 'checkbox', 'select']))
+        if (!in_array($inputType, ['datetime', 'checkbox', 'select'])) {
             return;
+        }
         $attrField = ucfirst($this->getCamelizeName($field));
         if ($inputType == 'datetime') {
             $return = <<<EOD
-return \$value && !is_numeric(\$value) ? strtotime(\$value) : \$value;
+return \$value === '' ? null : (\$value && !is_numeric(\$value) ? strtotime(\$value) : \$value);
 EOD;
-        } else if (in_array($inputType, ['checkbox', 'select'])) {
+        } elseif (in_array($inputType, ['checkbox', 'select'])) {
             $return = <<<EOD
 return is_array(\$value) ? implode(',', \$value) : \$value;
 EOD;
@@ -933,13 +1025,17 @@ EOD;
         if (count($parseArr) > 1) {
             $parentDir = dirname($parseFile);
             for ($i = 0; $i < count($parseArr); $i++) {
-                $iterator = new \FilesystemIterator($parentDir);
-                $isDirEmpty = !$iterator->valid();
-                if ($isDirEmpty) {
-                    rmdir($parentDir);
-                    $parentDir = dirname($parentDir);
-                } else {
-                    return true;
+                try {
+                    $iterator = new \FilesystemIterator($parentDir);
+                    $isDirEmpty = !$iterator->valid();
+                    if ($isDirEmpty) {
+                        rmdir($parentDir);
+                        $parentDir = dirname($parentDir);
+                    } else {
+                        return true;
+                    }
+                } catch (\UnexpectedValueException $e) {
+                    return false;
                 }
             }
         }
@@ -984,28 +1080,33 @@ EOD;
 
     /**
      * 获取已解析相关信息
-     * @param $module
-     * @param $name
-     * @param $table
-     * @param $type
+     * @param string $module 模块名称
+     * @param string $name 自定义名称
+     * @param string $table 数据表名
+     * @param string $type 解析类型，本例中为controller、model、validate
      * @return array
      */
     protected function getParseNameData($module, $name, $table, $type)
     {
         $arr = [];
         if (!$name) {
-            $arr = explode('_', strtolower($table));
+            $parseName = Loader::parseName($table, 1);
+            $parseArr = [$table];
         } else {
             $name = str_replace(['.', '/', '\\'], '/', $name);
             $arr = explode('/', $name);
+            $parseName = ucfirst(array_pop($arr));
+            $parseArr = $arr;
+            array_push($parseArr, $parseName);
         }
-        $parseName = ucfirst(array_pop($arr));
+        //类名不能为内部关键字
+        if (in_array(strtolower($parseName), $this->internalKeywords)) {
+            throw new Exception('Unable to use internal variable:' . $parseName);
+        }
         $appNamespace = Config::get('app_namespace');
         $parseNamespace = "{$appNamespace}\\{$module}\\{$type}" . ($arr ? "\\" . implode("\\", $arr) : "");
         $moduleDir = APP_PATH . $module . DS;
         $parseFile = $moduleDir . $type . DS . ($arr ? implode(DS, $arr) . DS : '') . $parseName . '.php';
-        $parseArr = $arr;
-        $parseArr[] = $parseName;
         return [$parseNamespace, $parseName, $parseFile, $parseArr];
     }
 
@@ -1070,7 +1171,7 @@ EOD;
     protected function getLangItem($field, $content)
     {
         if ($content || !Lang::has($field)) {
-            $itemArr = [];
+            $this->fieldMaxLen = strlen($field) > $this->fieldMaxLen ? strlen($field) : $this->fieldMaxLen;
             $content = str_replace('，', ',', $content);
             if (stripos($content, ':') !== false && stripos($content, ',') && stripos($content, '=') !== false) {
                 list($fieldLang, $item) = explode(':', $content);
@@ -1080,6 +1181,7 @@ EOD;
                     if (count($valArr) == 2) {
                         list($key, $value) = $valArr;
                         $itemArr[$field . ' ' . $key] = $value;
+                        $this->fieldMaxLen = strlen($field . ' ' . $key) > $this->fieldMaxLen ? strlen($field . ' ' . $key) : $this->fieldMaxLen;
                     }
                 }
             } else {
@@ -1087,7 +1189,7 @@ EOD;
             }
             $resultArr = [];
             foreach ($itemArr as $k => $v) {
-                $resultArr[] = "    '" . mb_ucfirst($k) . "'  =>  '{$v}'";
+                $resultArr[] = "    '" . mb_ucfirst($k) . "' => '{$v}'";
             }
             return implode(",\n", $resultArr);
         } else {
@@ -1101,7 +1203,7 @@ EOD;
      * @param boolean $withTpl
      * @return array
      */
-    protected function getLangArray($arr, $withTpl = TRUE)
+    protected function getLangArray($arr, $withTpl = true)
     {
         $langArr = [];
         foreach ($arr as $k => $v) {
@@ -1117,8 +1219,9 @@ EOD;
      */
     protected function getArrayString($arr)
     {
-        if (!is_array($arr))
+        if (!is_array($arr)) {
             return $arr;
+        }
         $stringArr = [];
         foreach ($arr as $k => $v) {
             $is_var = in_array(substr($v, 0, 1), ['$', '_']);
@@ -1128,7 +1231,7 @@ EOD;
             }
             $stringArr[] = "'" . $k . "' => " . ($is_var ? $v : "'{$v}'");
         }
-        return implode(",", $stringArr);
+        return implode(", ", $stringArr);
     }
 
     protected function getItemArray($item, $field, $comment)
@@ -1180,11 +1283,11 @@ EOD;
             case 'tinytext':
                 $inputType = 'textarea';
                 break;
-            case 'year';
-            case 'date';
-            case 'time';
-            case 'datetime';
-            case 'timestamp';
+            case 'year':
+            case 'date':
+            case 'time':
+            case 'datetime':
+            case 'timestamp':
                 $inputType = 'datetime';
                 break;
             default:
@@ -1310,8 +1413,9 @@ EOD;
             $formatter = 'label';
         }
         foreach ($itemArr as $k => &$v) {
-            if (substr($v, 0, 3) !== '__(')
+            if (substr($v, 0, 3) !== '__(') {
                 $v = "__('" . mb_ucfirst($v) . "')";
+            }
         }
         unset($v);
         $searchList = json_encode($itemArr, JSON_FORCE_OBJECT | JSON_UNESCAPED_UNICODE);
@@ -1321,19 +1425,23 @@ EOD;
         }
         if (in_array($datatype, ['date', 'datetime']) || $formatter === 'datetime') {
             $html .= ", operate:'RANGE', addclass:'datetimerange'";
-        } else if (in_array($datatype, ['float', 'double', 'decimal'])) {
+        } elseif (in_array($datatype, ['float', 'double', 'decimal'])) {
             $html .= ", operate:'BETWEEN'";
         }
         if (in_array($datatype, ['set'])) {
             $html .= ", operate:'FIND_IN_SET'";
         }
+        if (in_array($formatter, ['image', 'images'])) {
+            $html .= ", events: Table.api.events.image";
+        }
         if ($itemArr && !$formatter) {
             $formatter = 'normal';
         }
-        if ($formatter)
+        if ($formatter) {
             $html .= ", formatter: Table.api.formatter." . $formatter . "}";
-        else
+        } else {
             $html .= "}";
+        }
         return $html;
     }
 
@@ -1347,5 +1455,4 @@ EOD;
     {
         return $this->getCamelizeName($field) . 'List';
     }
-
 }

@@ -21,6 +21,21 @@ define(['jquery', 'bootstrap', 'backend', 'table', 'form', 'template'], function
                     });
                 }
             });
+            table.on('load-error.bs.table', function (e, status, res) {
+                if (status == 404 && $(".btn-switch.active").data("type") != "local") {
+                    Layer.confirm(__('Store now available tips'), {
+                        title: __('Warmtips'),
+                        btn: [__('Switch to the local'), __('Try to reload')]
+                    }, function (index) {
+                        layer.close(index);
+                        $(".btn-switch[data-type='local']").trigger("click");
+                    }, function (index) {
+                        layer.close(index);
+                        table.bootstrapTable('refresh');
+                    });
+                    return false;
+                }
+            });
             table.on('post-body.bs.table', function (e, settings, json, xhr) {
                 var parenttable = table.closest('.bootstrap-table');
                 var d = $(".fixed-table-toolbar", parenttable).find(".search input");
@@ -178,6 +193,7 @@ define(['jquery', 'bootstrap', 'backend', 'table', 'form', 'template'], function
                 if (!userinfo) {
                     Layer.open({
                         content: Template("logintpl", {}),
+                        zIndex: 99,
                         area: ['430px', '350px'],
                         title: __('Login FastAdmin'),
                         resize: false,
@@ -196,7 +212,6 @@ define(['jquery', 'bootstrap', 'backend', 'table', 'form', 'template'], function
                                 Layer.closeAll();
                                 Layer.alert(ret.msg);
                             }, function (data, ret) {
-                                Layer.alert(ret.msg);
                             });
                         },
                         btn2: function () {
@@ -521,6 +536,9 @@ define(['jquery', 'bootstrap', 'backend', 'table', 'form', 'template'], function
                     return '<a href="https://wpa.qq.com/msgrd?v=3&uin=' + row.qq + '&site=fastadmin.net&menu=yes" target="_blank" data-toggle="tooltip" title="' + __('Click to contact developer') + '" class="text-primary">' + value + '</a>';
                 },
                 price: function (value, row, index) {
+                    if (isNaN(value)) {
+                        return value;
+                    }
                     return parseFloat(value) == 0 ? '<span class="text-success">' + __('Free') + '</span>' : '<span class="text-danger">￥' + value + '</span>';
                 },
                 downloads: function (value, row, index) {

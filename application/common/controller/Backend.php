@@ -7,7 +7,9 @@ use think\Config;
 use think\Controller;
 use think\Hook;
 use think\Lang;
+use think\Loader;
 use think\Session;
+use fast\Tree;
 
 /**
  * 后台控制器基类
@@ -94,6 +96,11 @@ class Backend extends Controller
     protected $selectpageFields = '*';
 
     /**
+     * 前台提交过来,需要排除的字段数据
+     */
+    protected $excludeFields = "";
+
+    /**
      * 导入文件首行类型
      * 支持comment/name
      * 表示注释或字段名
@@ -108,16 +115,16 @@ class Backend extends Controller
     public function _initialize()
     {
         $modulename = $this->request->module();
-        $controllername = strtolower($this->request->controller());
+        $controllername = Loader::parseName($this->request->controller());
         $actionname = strtolower($this->request->action());
 
         $path = str_replace('.', '/', $controllername) . '/' . $actionname;
 
         // 定义是否Addtabs请求
-        !defined('IS_ADDTABS') && define('IS_ADDTABS', input("addtabs") ? TRUE : FALSE);
+        !defined('IS_ADDTABS') && define('IS_ADDTABS', input("addtabs") ? true : false);
 
         // 定义是否Dialog请求
-        !defined('IS_DIALOG') && define('IS_DIALOG', input("dialog") ? TRUE : FALSE);
+        !defined('IS_DIALOG') && define('IS_DIALOG', input("dialog") ? true : false);
 
         // 定义是否AJAX请求
         !defined('IS_AJAX') && define('IS_AJAX', $this->request->isAjax());
@@ -133,6 +140,10 @@ class Backend extends Controller
                 Hook::listen('admin_nologin', $this);
                 $url = Session::get('referer');
                 $url = $url ? $url : $this->request->url();
+                if ($url == '/') {
+                    $this->redirect('index/login', [], 302, ['referer' => $url]);
+                    exit;
+                }
                 $this->error(__('Please login first'), url('index/login', ['url' => $url]));
             }
             // 判断是否需要验证权限
@@ -222,7 +233,7 @@ class Backend extends Controller
 
     /**
      * 渲染配置信息
-     * @param mixed $name 键名或数组
+     * @param mixed $name  键名或数组
      * @param mixed $value 值
      */
     protected function assignconfig($name, $value = '')
@@ -232,7 +243,7 @@ class Backend extends Controller
 
     /**
      * 生成查询所需要的条件,排序方式
-     * @param mixed $searchfields 快速查询的字段
+     * @param mixed   $searchfields   快速查询的字段
      * @param boolean $relationSearch 是否关联查询
      * @return array
      */
@@ -247,8 +258,8 @@ class Backend extends Controller
         $order = $this->request->get("order", "DESC");
         $offset = $this->request->get("offset", 0);
         $limit = $this->request->get("limit", 0);
-        $filter = (array)json_decode($filter, TRUE);
-        $op = (array)json_decode($op, TRUE);
+        $filter = (array)json_decode($filter, true);
+        $op = (array)json_decode($op, true);
         $filter = $filter ? $filter : [];
         $where = [];
         $tableName = '';
@@ -285,7 +296,7 @@ class Backend extends Controller
             $sym = strtoupper(isset($op[$k]) ? $op[$k] : $sym);
             switch ($sym) {
                 case '=':
-                case '!=':
+                case '<>':
                     $where[] = [$k, $sym, (string)$v];
                     break;
                 case 'LIKE':
@@ -314,13 +325,14 @@ class Backend extends Controller
                 case 'BETWEEN':
                 case 'NOT BETWEEN':
                     $arr = array_slice(explode(',', $v), 0, 2);
-                    if (stripos($v, ',') === false || !array_filter($arr))
-                        continue;
+                    if (stripos($v, ',') === false || !array_filter($arr)) {
+                        continue 2;
+                    }
                     //当出现一边为空时改变操作符
                     if ($arr[0] === '') {
                         $sym = $sym == 'BETWEEN' ? '<=' : '>';
                         $arr = $arr[1];
-                    } else if ($arr[1] === '') {
+                    } elseif ($arr[1] === '') {
                         $sym = $sym == 'BETWEEN' ? '>=' : '<';
                         $arr = $arr[0];
                     }
@@ -330,13 +342,14 @@ class Backend extends Controller
                 case 'NOT RANGE':
                     $v = str_replace(' - ', ',', $v);
                     $arr = array_slice(explode(',', $v), 0, 2);
-                    if (stripos($v, ',') === false || !array_filter($arr))
-                        continue;
+                    if (stripos($v, ',') === false || !array_filter($arr)) {
+                        continue 2;
+                    }
                     //当出现一边为空时改变操作符
                     if ($arr[0] === '') {
                         $sym = $sym == 'RANGE' ? '<=' : '>';
                         $arr = $arr[1];
-                    } else if ($arr[1] === '') {
+                    } elseif ($arr[1] === '') {
                         $sym = $sym == 'RANGE' ? '>=' : '<';
                         $arr = $arr[0];
                     }
@@ -420,6 +433,13 @@ class Backend extends Controller
         $searchfield = (array)$this->request->request("searchField/a");
         //自定义搜索条件
         $custom = (array)$this->request->request("custom/a");
+        //是否返回树形结构
+        $istree = $this->request->request("isTree", 0);
+        $ishtml = $this->request->request("isHtml", 0);
+        if ($istree) {
+            $word = [];
+            $pagesize = 99999;
+        }
         $order = [];
         foreach ($orderby as $k => $v) {
             $order[$v[0]] = $v[1];
@@ -438,7 +458,11 @@ class Backend extends Controller
                 }
                 if ($custom && is_array($custom)) {
                     foreach ($custom as $k => $v) {
-                        $query->where($k, '=', $v);
+                        if (is_array($v) && 2 == count($v)) {
+                            $query->where($k, trim($v[0]), $v[1]);
+                        } else {
+                            $query->where($k, '=', $v);
+                        }
                     }
                 }
             };
@@ -462,12 +486,23 @@ class Backend extends Controller
                 unset($item['password'], $item['salt']);
                 $list[] = [
                     $primarykey => isset($item[$primarykey]) ? $item[$primarykey] : '',
-                    $field      => isset($item[$field]) ? $item[$field] : ''
+                    $field      => isset($item[$field]) ? $item[$field] : '',
+                    'pid'       => isset($item['pid']) ? $item['pid'] : 0
                 ];
+            }
+            if ($istree) {
+                $tree = Tree::instance();
+                $tree->init(collection($list)->toArray(), 'pid');
+                $list = $tree->getTreeList($tree->getTreeArray(0), $field);
+                if (!$ishtml) {
+                    foreach ($list as &$item) {
+                        $item = str_replace('&nbsp;', ' ', $item);
+                    }
+                    unset($item);
+                }
             }
         }
         //这里一定要返回有list这个字段,total是可选的,如果total<=list的数量,则会隐藏分页按钮
         return json(['list' => $list, 'total' => $total]);
     }
-
 }

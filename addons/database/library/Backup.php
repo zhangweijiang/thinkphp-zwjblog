@@ -54,7 +54,7 @@ class Backup
     public function setIgnoreTable($table)
     {
         if ($table) {
-            $this->ignoreTables = is_array($table) ? $table : explode(',', $table);
+            $this->ignoreTables = is_array($table) ? $table : explode(',', preg_replace('/\s+/', '', $table));
         }
         return $this;
     }
@@ -94,6 +94,11 @@ class Backup
         $tables = $this->db->query("SHOW TABLES");
         # LOOP: Get the tables
         foreach ($tables AS $table) {
+
+            // 忽略表
+            if (in_array($table[0], $this->ignoreTables)) {
+                continue;
+            }
             # COUNT
             $ct++;
             /** ** ** ** ** **/

@@ -1,16 +1,15 @@
 //! moment.js locale configuration
-//! locale : Lithuanian [lt]
-//! author : Mindaugas Mozūras : https://github.com/mmozuras
 
 ;(function (global, factory) {
    typeof exports === 'object' && typeof module !== 'undefined'
        && typeof require === 'function' ? factory(require('../moment')) :
    typeof define === 'function' && define.amd ? define(['../moment'], factory) :
    factory(global.moment)
-}(this, function (moment) { 'use strict';
+}(this, (function (moment) { 'use strict';
 
 
     var units = {
+        'ss' : 'sekundė_sekundžių_sekundes',
         'm' : 'minutė_minutės_minutę',
         'mm': 'minutės_minučių_minutes',
         'h' : 'valanda_valandos_valandą',
@@ -91,6 +90,7 @@
             future : 'po %s',
             past : 'prieš %s',
             s : translateSeconds,
+            ss : translate,
             m : translateSingular,
             mm : translate,
             h : translateSingular,
@@ -102,7 +102,7 @@
             y : translateSingular,
             yy : translate
         },
-        ordinalParse: /\d{1,2}-oji/,
+        dayOfMonthOrdinalParse: /\d{1,2}-oji/,
         ordinal : function (number) {
             return number + '-oji';
         },
@@ -114,4 +114,4 @@
 
     return lt;
 
-}));
+})));

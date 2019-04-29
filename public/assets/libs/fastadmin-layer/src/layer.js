@@ -1201,8 +1201,8 @@ layer.photos = function(options, loop, key){
   };
   
   dict.loadi = layer.load(1, {
-    shade: 'shade' in options ? false : 0.9,
-    scrollbar: false
+    shade: 'shade' in options ? options["shade"] : 0.9,
+    scrollbar: 'scrollbar' in options ? options["scrollbar"] : false,
   });
 
   loadImage(data[start].src, function(img){

@@ -1,9 +1,9 @@
 /**
  * @preserve tableExport.jquery.plugin
  *
- * Version 1.9.15
+ * Version 1.10.3
  *
- * Copyright (c) 2015-2018 hhurz, https://github.com/hhurz
+ * Copyright (c) 2015-2019 hhurz, https://github.com/hhurz
  *
  * Original Work Copyright (c) 2014 Giri Raj
  *
@@ -64,7 +64,6 @@
           }
         }
       },
-      maxNestedTables: 1,               // Max number of nested tables that will be exported. 0 = export all. Default = 1
       mso: {                            // MS Excel and MS Word related options
         fileFormat:        'xlshtml',   // xlshtml = Excel 2000 html format
                                         // xmlss = XML Spreadsheet 2003 file format (XMLSS)
@@ -86,6 +85,8 @@
           thousandsSeparator: ','
         }
       },
+      onAfterSaveToFile:   null,
+      onBeforeSaveToFile:  null,        // Return false as result to abort save process
       onCellData:          null,
       onCellHtmlData:      null,
       onIgnoreRow:         null,        // onIgnoreRow($tr, rowIndex): function should return true to not export a row
@@ -104,7 +105,7 @@
         leadingWS:         false,       // preserve leading white spaces
         trailingWS:        false        // preserve trailing white spaces
       },
-      preventInjection:    true,
+      preventInjection:    true,        // Prepend a single quote to cell strings that start with =,+,- or @ to prevent formula injection
       tbodySelector:       'tr',
       tfootSelector:       'tr',        // Set empty ('') to prevent export of tfoot rows
       theadSelector:       'tr',
@@ -168,7 +169,6 @@
 
     // Check values of some options
     defaults.mso.pageOrientation = (defaults.mso.pageOrientation.substr(0, 1) === 'l') ? 'landscape' : 'portrait';
-    defaults.maxNestedTables = (defaults.maxNestedTables >= 0 ? defaults.maxNestedTables : 1);
 
     colNames = GetColumnNames(el);
 
@@ -236,8 +236,8 @@
       };
 
       rowlength += CollectCsvData($(el).find('thead').first().find(defaults.theadSelector), 'th,td', rowlength);
-      findTablePart($(el),'tbody').each(function () {
-        rowlength += CollectCsvData(findRows($(this), defaults.tbodySelector), 'td,th', rowlength);
+      findTableElements($(el),'tbody').each(function () {
+        rowlength += CollectCsvData(findTableElements($(this), defaults.tbodySelector), 'td,th', rowlength);
       });
       if ( defaults.tfootSelector.length )
         CollectCsvData($(el).find('tfoot').first().find(defaults.tfootSelector), 'td,th', rowlength);
@@ -256,15 +256,12 @@
         return;
       }
 
-      try {
-        blob = new Blob([csvData], {type: "text/" + (defaults.type === 'csv' ? 'csv' : 'plain') + ";charset=utf-8"});
-        saveAs(blob, defaults.fileName + '.' + defaults.type, (defaults.type !== 'csv' || defaults.csvUseBOM === false));
-      }
-      catch (e) {
-        downloadFile(defaults.fileName + '.' + defaults.type,
-          'data:text/' + (defaults.type === 'csv' ? 'csv' : 'plain') + ';charset=utf-8,' + ((defaults.type === 'csv' && defaults.csvUseBOM) ? '\ufeff' : ''),
-          csvData);
-      }
+      saveToFile ( csvData, 
+                   defaults.fileName + '.' + defaults.type, 
+                   "text/" + (defaults.type === 'csv' ? 'csv' : 'plain'), 
+                   "utf-8", 
+                   "", 
+                   (defaults.type === 'csv' && defaults.csvUseBOM) );
 
     } else if ( defaults.type === 'sql' ) {
 
@@ -272,8 +269,8 @@
       rowIndex = 0;
       ranges   = [];
       var tdData = "INSERT INTO `" + defaults.tableName + "` (";
-      $hrows     = $(el).find('thead').first().find(defaults.theadSelector);
-      $hrows.each(function () {
+      $hrows     = collectHeadRows ($(el));
+      $($hrows).each(function () {
         ForEachVisibleCell(this, 'th,td', rowIndex, $hrows.length,
                            function (cell, row, col) {
                              tdData += "'" + parseString(cell, row, col) + "',";
@@ -309,21 +306,13 @@
       if ( defaults.outputMode === 'base64' )
         return base64encode(tdData);
 
-      try {
-        blob = new Blob([tdData], {type: "text/plain;charset=utf-8"});
-        saveAs(blob, defaults.fileName + '.sql');
-      }
-      catch (e) {
-        downloadFile(defaults.fileName + '.sql',
-          'data:application/sql;charset=utf-8,',
-          tdData);
-      }
+      saveToFile ( tdData, defaults.fileName + '.sql', "application/sql", "utf-8", "", false );
 
     } else if ( defaults.type === 'json' ) {
       var jsonHeaderArray = [];
       ranges = [];
-      $hrows = $(el).find('thead').first().find(defaults.theadSelector);
-      $hrows.each(function () {
+      $hrows = collectHeadRows ($(el));
+      $($hrows).each(function () {
         var jsonArrayTd = [];
 
         ForEachVisibleCell(this, 'th,td', rowIndex, $hrows.length,
@@ -371,15 +360,7 @@
       if ( defaults.outputMode === 'base64' )
         return base64encode(sdata);
 
-      try {
-        blob = new Blob([sdata], {type: "application/json;charset=utf-8"});
-        saveAs(blob, defaults.fileName + '.json');
-      }
-      catch (e) {
-        downloadFile(defaults.fileName + '.json',
-          'data:application/json;charset=utf-8;base64,',
-          sdata);
-      }
+      saveToFile ( sdata, defaults.fileName + '.json', "application/json", "utf-8", "base64", false );
 
     } else if ( defaults.type === 'xml' ) {
       rowIndex = 0;
@@ -388,8 +369,8 @@
       xml += '<tabledata><fields>';
 
       // Header
-      $hrows = $(el).find('thead').first().find(defaults.theadSelector);
-      $hrows.each(function () {
+      $hrows = collectHeadRows ($(el));
+      $($hrows).each(function () {
 
         ForEachVisibleCell(this, 'th,td', rowIndex, $hrows.length,
                            function (cell, row, col) {
@@ -427,15 +408,7 @@
       if ( defaults.outputMode === 'base64' )
         return base64encode(xml);
 
-      try {
-        blob = new Blob([xml], {type: "application/xml;charset=utf-8"});
-        saveAs(blob, defaults.fileName + '.xml');
-      }
-      catch (e) {
-        downloadFile(defaults.fileName + '.xml',
-          'data:application/xml;charset=utf-8;base64,',
-          xml);
-      }
+      saveToFile ( xml, defaults.fileName + '.xml', "application/xml", "utf-8", "base64", false );
     }
     else if ( defaults.type === 'excel' && defaults.mso.fileFormat === 'xmlss' ) {
       var docDatas = [];
@@ -551,8 +524,7 @@
           return $rows.length;
         }
 
-        var rowLength = 0;
-        rowLength += CollectXmlssData ($table.find('thead').first().find(defaults.theadSelector), 'th,td', rowLength);
+        var rowLength = CollectXmlssData (collectHeadRows ($table), 'th,td', rowLength);
         CollectXmlssData (collectRows ($table), 'td,th', rowLength);
 
         docData += '</Table>\r';
@@ -636,97 +608,43 @@
       if ( defaults.outputMode === 'base64' )
         return base64encode(xmlssDocFile);
 
-      try {
-        blob = new Blob([xmlssDocFile], {type: "application/xml;charset=utf-8"});
-        saveAs(blob, defaults.fileName + '.xml');
-      }
-      catch (e) {
-        downloadFile(defaults.fileName + '.xml',
-          'data:application/xml;charset=utf-8;base64,',
-          xmlssDocFile);
-      }
+      saveToFile ( xmlssDocFile, defaults.fileName + '.xml', "application/xml", "utf-8", "base64", false );
     }
     else if ( defaults.type === 'excel' && defaults.mso.fileFormat === 'xlsx' ) {
 
-      var data  = [];
-      var spans = [];
-      rowIndex  = 0;
+      var docNames = [];
+      var workbook = XLSX.utils.book_new();
 
-      $rows = $(el).find('thead').first().find(defaults.theadSelector).toArray();
-      $rows.push.apply($rows, collectRows ($(el)));
+      // Multiple worksheets and .xlsx file extension #202
 
-      $($rows).each(function () {
-        var cols = [];
-        ForEachVisibleCell(this, 'th,td', rowIndex, $rows.length,
-                           function (cell, row, col) {
-                             if ( typeof cell !== 'undefined' && cell !== null ) {
+      $(el).filter(function () {
+        return isVisible($(this));
+      }).each(function () {
+        var $table = $(this);
+        var ws = XLSX.utils.table_to_sheet(this);
 
-                               var cellValue = parseString(cell, row, col);
+        var sheetName = '';
+        if ( typeof defaults.mso.worksheetName === 'string' && defaults.mso.worksheetName.length )
+          sheetName = defaults.mso.worksheetName + ' ' + (docNames.length + 1);
+        else if ( typeof defaults.mso.worksheetName[docNames.length] !== 'undefined' )
+          sheetName = defaults.mso.worksheetName[docNames.length];
+        if ( ! sheetName.length )
+          sheetName = $table.find('caption').text() || '';
+        if ( ! sheetName.length )
+          sheetName = 'Table ' + (docNames.length + 1);
+        sheetName = $.trim(sheetName.replace(/[\\\/[\]*:?'"]/g,'').substring(0,31));
 
-                               var colspan = getColspan (cell);
-                               var rowspan = getRowspan (cell);
-
-                               // Skip span ranges
-                               $.each(spans, function () {
-                                 var range = this;
-                                 if ( rowIndex >= range.s.r && rowIndex <= range.e.r && cols.length >= range.s.c && cols.length <= range.e.c ) {
-                                   for ( var i = 0; i <= range.e.c - range.s.c; ++i )
-                                     cols.push(null);
-                                 }
-                               });
-
-                               // Handle Row Span
-                               if ( rowspan || colspan ) {
-                                 rowspan = rowspan || 1;
-                                 colspan = colspan || 1;
-                                 spans.push({
-                                              s: {r: rowIndex, c: cols.length},
-                                              e: {r: rowIndex + rowspan - 1, c: cols.length + colspan - 1}
-                                            });
-                               }
-
-                               // Handle Value
-                               if ( typeof defaults.onCellData !== 'function' ) {
-
-                                 // Type conversion
-                                 if ( cellValue !== "" && cellValue === +cellValue )
-                                   cellValue = +cellValue;
-                               }
-                               cols.push(cellValue !== "" ? cellValue : null);
-
-                               // Handle Colspan
-                               if ( colspan )
-                                 for ( var k = 0; k < colspan - 1; ++k )
-                                   cols.push(null);
-                             }
-                           });
-        data.push(cols);
-        rowIndex++;
+        docNames.push(sheetName);
+        XLSX.utils.book_append_sheet(workbook, ws, sheetName);
       });
 
-      //noinspection JSPotentiallyInvalidConstructorUsage
-      var wb = new jx_Workbook(),
-        ws = jx_createSheet(data);
-
-      // add span ranges to worksheet
-      ws['!merges'] = spans;
-
       // add worksheet to workbook
-      //wb.SheetNames.push(defaults.mso.worksheetName);
-      //wb.Sheets[defaults.mso.worksheetName] = ws;
-      XLSX.utils.book_append_sheet(wb, ws, defaults.mso.worksheetName);
+      var wbout = XLSX.write(workbook, {type: 'binary', bookType: defaults.mso.fileFormat, bookSST: false});
 
-      var wbout = XLSX.write(wb, {type: 'binary', bookType: defaults.mso.fileFormat, bookSST: false});
-
-      try {
-        blob = new Blob([jx_s2ab(wbout)], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8'});
-        saveAs(blob, defaults.fileName + '.' + defaults.mso.fileFormat);
-      }
-      catch (e) {
-        downloadFile(defaults.fileName + '.' + defaults.mso.fileFormat,
-          'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8,',
-          jx_s2ab(wbout));
-      }
+      saveToFile ( jx_s2ab(wbout), 
+                   defaults.fileName + '.' + defaults.mso.fileFormat, 
+                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                   "UTF-8", "", false );
     }
     else if ( defaults.type === 'excel' || defaults.type === 'xls' || defaults.type === 'word' || defaults.type === 'doc' ) {
 
@@ -757,21 +675,25 @@
 
         // Header
         docData += '<table><thead>';
-        $hrows = $table.find('thead').first().find(defaults.theadSelector);
-        $hrows.each(function () {
+        $hrows = collectHeadRows ($table);
+        $($hrows).each(function () {
+          var $row = $(this);
           trData = "";
           ForEachVisibleCell(this, 'th,td', rowIndex, $hrows.length,
                              function (cell, row, col) {
                                if ( cell !== null ) {
                                  var thstyle = '';
+                                 var cellstyles = document.defaultView.getComputedStyle(cell, null);
+                                 var rowstyles = document.defaultView.getComputedStyle($row[0], null);
+
                                  trData += '<th';
-                                 for ( var styles in defaults.mso.styles ) {
-                                   if ( defaults.mso.styles.hasOwnProperty(styles) ) {
-                                     var thcss = $(cell).css(defaults.mso.styles[styles]);
-                                     if ( thcss !== '' && thcss !== '0px none rgb(0, 0, 0)' && thcss !== 'rgba(0, 0, 0, 0)' ) {
-                                       thstyle += (thstyle === '') ? 'style="' : ';';
-                                       thstyle += defaults.mso.styles[styles] + ':' + thcss;
-                                     }
+                                 for ( var cssStyle in defaults.mso.styles ) {
+                                   var thcss = cellstyles[defaults.mso.styles[cssStyle]];
+                                   if ( thcss === '' )
+                                     thcss = rowstyles[defaults.mso.styles[cssStyle]];
+                                   if ( thcss !== '' && thcss !== '0px none rgb(0, 0, 0)' && thcss !== 'rgba(0, 0, 0, 0)' ) {
+                                     thstyle += (thstyle === '') ? 'style="' : ';';
+                                     thstyle += defaults.mso.styles[cssStyle] + ':' + thcss;
                                    }
                                  }
                                  if ( thstyle !== '' )
@@ -805,6 +727,8 @@
                                  var tdvalue = parseString(cell, row, col);
                                  var tdstyle = '';
                                  var tdcss   = $(cell).data("tableexport-msonumberformat");
+                                 var cellstyles = document.defaultView.getComputedStyle(cell, null);
+                                 var rowstyles = document.defaultView.getComputedStyle($row[0], null);
 
                                  if ( typeof tdcss === 'undefined' && typeof defaults.mso.onMsoNumberFormat === 'function' )
                                    tdcss = defaults.mso.onMsoNumberFormat(cell, row, col);
@@ -813,15 +737,13 @@
                                    tdstyle = 'style="mso-number-format:\'' + tdcss + '\'';
 
                                  for ( var cssStyle in defaults.mso.styles ) {
-                                   if ( defaults.mso.styles.hasOwnProperty(cssStyle) ) {
-                                     tdcss = $(cell).css(defaults.mso.styles[cssStyle]);
-                                     if ( tdcss === '' )
-                                       tdcss = $row.css(defaults.mso.styles[cssStyle]);
+                                   tdcss = cellstyles[defaults.mso.styles[cssStyle]];
+                                   if ( tdcss === '' )
+                                     tdcss = rowstyles[defaults.mso.styles[cssStyle]];
 
-                                     if ( tdcss !== '' && tdcss !== '0px none rgb(0, 0, 0)' && tdcss !== 'rgba(0, 0, 0, 0)' ) {
-                                       tdstyle += (tdstyle === '') ? 'style="' : ';';
-                                       tdstyle += defaults.mso.styles[cssStyle] + ':' + tdcss;
-                                     }
+                                   if ( tdcss !== '' && tdcss !== '0px none rgb(0, 0, 0)' && tdcss !== 'rgba(0, 0, 0, 0)' ) {
+                                     tdstyle += (tdstyle === '') ? 'style="' : ';';
+                                     tdstyle += defaults.mso.styles[cssStyle] + ':' + tdcss;
                                    }
                                  }
                                  trData += '<td';
@@ -905,19 +827,9 @@
       if ( defaults.outputMode === 'base64' )
         return base64encode(docFile);
 
-      try {
-        blob = new Blob([docFile], {type: 'application/vnd.ms-' + defaults.type});
-        saveAs(blob, defaults.fileName + '.' + MSDocExt);
-      }
-      catch (e) {
-        downloadFile(defaults.fileName + '.' + MSDocExt,
-          'data:application/vnd.ms-' + MSDocType + ';base64,',
-          docFile);
-      }
+      saveToFile ( docFile, defaults.fileName + '.' + MSDocExt, "application/vnd.ms-" + MSDocType, "", "base64", false );
     }
     else if ( defaults.type === 'png' ) {
-      //html2canvas($(el)[0], {
-      //  onrendered: function (canvas) {
       html2canvas($(el)[0]).then(
         function (canvas) {
 
@@ -940,14 +852,7 @@
             return;
           }
 
-          try {
-            blob = new Blob([buffer], {type: "image/png"});
-            saveAs(blob, defaults.fileName + '.png');
-          }
-          catch (e) {
-            downloadFile(defaults.fileName + '.png', 'data:image/png,', blob);
-          }
-          //}
+          saveToFile ( buffer, defaults.fileName + '.png', "image/png", "", "", false );
         });
 
     } else if ( defaults.type === 'pdf' ) {
@@ -1003,7 +908,7 @@
           return rlength;
         };
 
-        $hrows = $(this).find('thead').first().find(defaults.theadSelector);
+        $hrows = collectHeadRows ($(this));
 
         var colcount = CollectPdfmakeData($hrows, 'th,td', $hrows.length);
 
@@ -1039,16 +944,7 @@
         $.extend(true, pdfMake.fonts, defaults.pdfmake.fonts);
 
         pdfMake.createPdf(docDefinition).getBuffer(function (buffer) {
-
-          try {
-            var blob = new Blob([buffer], {type: "application/pdf"});
-            saveAs(blob, defaults.fileName + '.pdf');
-          }
-          catch (e) {
-            downloadFile(defaults.fileName + '.pdf',
-              'data:application/pdf;base64,',
-              buffer);
-          }
+          saveToFile ( buffer, defaults.fileName + '.pdf', "application/pdf", "", "", false );
         });
 
       }
@@ -1119,6 +1015,8 @@
           teOptions.doc = new jsPDF(defaults.jspdf.orientation,
                                     defaults.jspdf.unit,
                                     defaults.jspdf.format);
+          teOptions.wScaleFactor = 1;
+          teOptions.hScaleFactor = 1;
 
           if ( typeof defaults.jspdf.onDocCreated === 'function' )
             defaults.jspdf.onDocCreated(teOptions.doc);
@@ -1139,17 +1037,13 @@
               checkCellVisibilty = $hiddenTableElements.length > 0;
             }
 
-            $hrows = $(this).find('thead').find(defaults.theadSelector);
+            $hrows = collectHeadRows ($(this));
             $rows = collectRows ($(this));
 
             $($rows).each(function () {
               ForEachVisibleCell(this, 'td,th', $hrows.length + rowCount, $hrows.length + $rows.length,
                                  function (cell) {
-                                   if ( typeof cell !== 'undefined' && cell !== null ) {
-                                     var kids = $(cell).children();
-                                     if ( typeof kids !== 'undefined' && kids.length > 0 )
-                                       collectImages(cell, kids, teOptions);
-                                   }
+                                   collectImages(cell, $(cell).children(), teOptions);
                                  });
               rowCount++;
             });
@@ -1174,9 +1068,9 @@
 
             colNames = GetColumnNames(this);
 
-            teOptions.columns    = [];
-            teOptions.rows       = [];
-            teOptions.rowoptions = {};
+            teOptions.columns = [];
+            teOptions.rows    = [];
+            teOptions.teCells = {};
 
             // onTable: optional callback function for every matching table that can be used
             // to modify the tableExport options or to skip the output of a particular table
@@ -1259,20 +1153,20 @@
             if ( typeof atOptions.createdCell !== 'function' ) {
               // apply some original css styles to pdf table cells
               atOptions.createdCell = function (cell, data) {
-                var rowopt = teOptions.rowoptions [data.row.index + ":" + data.column.dataKey];
+                var tecell = teOptions.teCells [data.row.index + ":" + data.column.dataKey];
 
                 cell.styles.halign = (atOptions.styles.halign === 'inherit') ? 'center' : atOptions.styles.halign;
                 cell.styles.valign = atOptions.styles.valign;
 
-                if ( typeof rowopt !== 'undefined' && typeof rowopt.style !== 'undefined' && rowopt.style.hidden !== true ) {
+                if ( typeof tecell !== 'undefined' && typeof tecell.style !== 'undefined' && tecell.style.hidden !== true ) {
                   if ( atOptions.styles.halign === 'inherit' )
-                    cell.styles.halign = rowopt.style.align;
+                    cell.styles.halign = tecell.style.align;
                   if ( atOptions.styles.fillColor === 'inherit' )
-                    cell.styles.fillColor = rowopt.style.bcolor;
+                    cell.styles.fillColor = tecell.style.bcolor;
                   if ( atOptions.styles.textColor === 'inherit' )
-                    cell.styles.textColor = rowopt.style.color;
+                    cell.styles.textColor = tecell.style.color;
                   if ( atOptions.styles.fontStyle === 'inherit' )
-                    cell.styles.fontStyle = rowopt.style.fstyle;
+                    cell.styles.fontStyle = tecell.style.fstyle;
                 }
               };
             }
@@ -1291,25 +1185,42 @@
 
             if ( typeof atOptions.drawCell !== 'function' ) {
               atOptions.drawCell = function (cell, data) {
-                var rowopt = teOptions.rowoptions [data.row.index + ":" + data.column.dataKey];
-                if ( prepareAutoTableText(cell, data, rowopt) ) {
+                var tecell = teOptions.teCells [data.row.index + ":" + data.column.dataKey];
+                var draw2canvas = (typeof tecell !== 'undefined' && tecell.isCanvas);
 
-                  teOptions.doc.rect(cell.x, cell.y, cell.width, cell.height, cell.styles.fillStyle);
+                if ( draw2canvas !== true ) {
+                  if ( prepareAutoTableText(cell, data, tecell) ) {
 
-                  if ( typeof rowopt !== 'undefined' && typeof rowopt.kids !== 'undefined' && rowopt.kids.length > 0 ) {
+                    teOptions.doc.rect(cell.x, cell.y, cell.width, cell.height, cell.styles.fillStyle);
 
-                    var dh = cell.height / rowopt.rect.height;
-                    if ( dh > teOptions.dh || typeof teOptions.dh === 'undefined' )
-                      teOptions.dh = dh;
-                    teOptions.dw = cell.width / rowopt.rect.width;
+                    if ( typeof tecell !== 'undefined' &&
+                         typeof tecell.elements !== 'undefined' && tecell.elements.length ) {
 
-                    var y = cell.textPos.y;
-                    drawAutotableElements(cell, rowopt.kids, teOptions);
-                    cell.textPos.y = y;
-                    drawAutotableText(cell, rowopt.kids, teOptions);
+                      var hScale = cell.height / tecell.rect.height;
+                      if ( hScale > teOptions.hScaleFactor )
+                        teOptions.hScaleFactor = hScale;
+                      teOptions.wScaleFactor = cell.width / tecell.rect.width;
+
+                      var ySave = cell.textPos.y;
+                      drawAutotableElements(cell, tecell.elements, teOptions);
+                      cell.textPos.y = ySave;
+
+                      drawAutotableText(cell, tecell.elements, teOptions);
+                    }
+                    else
+                      drawAutotableText(cell, {}, teOptions);
                   }
-                  else
-                    drawAutotableText(cell, {}, teOptions);
+                }
+                else {
+                  var container = tecell.elements[0];
+                  var imgId  = $(container).attr("data-tableexport-canvas");
+                  var r = container.getBoundingClientRect();
+
+                  cell.width = r.width * teOptions.wScaleFactor;
+                  cell.height = r.height * teOptions.hScaleFactor;
+                  data.row.height = cell.height;
+
+                  jsPdfDrawImage (cell, container, imgId, teOptions);
                 }
                 return false;
               };
@@ -1317,8 +1228,8 @@
 
             // collect header and data rows
             teOptions.headerrows = [];
-            $hrows = $(this).find('thead').find(defaults.theadSelector);
-            $hrows.each(function () {
+            $hrows = collectHeadRows ($(this));
+            $($hrows).each(function () {
               colKey = 0;
               teOptions.headerrows[rowIndex] = [];
 
@@ -1376,13 +1287,14 @@
                                    }
                                    if ( typeof cell !== 'undefined' && cell !== null ) {
                                      obj = getCellStyles(cell);
-                                     obj.kids = $(cell).children();
-                                     teOptions.rowoptions [rowCount + ":" + colKey++] = obj;
+                                     obj.isCanvas = cell.hasAttribute("data-tableexport-canvas");
+                                     obj.elements = obj.isCanvas ? $(cell) : $(cell).children();
+                                     teOptions.teCells [rowCount + ":" + colKey++] = obj;
                                    }
                                    else {
-                                     obj = $.extend(true, {}, teOptions.rowoptions [rowCount + ":" + (colKey - 1)]);
+                                     obj = $.extend(true, {}, teOptions.teCells [rowCount + ":" + (colKey - 1)]);
                                      obj.colspan = -1;
-                                     teOptions.rowoptions [rowCount + ":" + colKey++] = obj;
+                                     teOptions.teCells [rowCount + ":" + colKey++] = obj;
                                    }
 
                                    rowData.push(parseString(cell, row, col));
@@ -1425,43 +1337,32 @@
       }
     }
 
-    /*
-    function FindColObject (objects, colIndex, rowIndex) {
-      var result = null;
-      $.each(objects, function () {
-        if ( this.rowIndex == rowIndex && this.key == colIndex ) {
-          result = this;
-          return false;
-        }
+    function collectHeadRows ($table) {
+      var result = [];
+      findTableElements($table,'thead').each(function () {
+        result.push.apply(result, findTableElements($(this), defaults.theadSelector).toArray());
       });
       return result;
     }
-    */
+
     function collectRows ($table) {
       var result = [];
-      findTablePart($table,'tbody').each(function () {
-        result.push.apply(result, findRows($(this), defaults.tbodySelector).toArray());
+      findTableElements($table,'tbody').each(function () {
+        result.push.apply(result, findTableElements($(this), defaults.tbodySelector).toArray());
       });
       if ( defaults.tfootSelector.length ) {
-        findTablePart($table,'tfoot').each(function () {
-          result.push.apply(result, findRows($(this), defaults.tfootSelector).toArray());
+        findTableElements($table,'tfoot').each(function () {
+          result.push.apply(result, findTableElements($(this), defaults.tfootSelector).toArray());
         });
       }
       return result;
     }
 
-    function findTablePart ($table, type) {
-      var tl = $table.parents('table').length;
-      return $table.find(type).filter (function () {
-        return $(this).closest('table').parents('table').length === tl;
-      });
-    }
-
-    function findRows ($tpart, rowSelector) {
-      return $tpart.find(rowSelector).filter (function () {
-        return (defaults.maxNestedTables === 0 ||
-          ($(this).find('table').length < defaults.maxNestedTables &&
-            $(this).parents('table').length <= defaults.maxNestedTables));
+    function findTableElements ($parent, selector) {
+      var parentSelector = $parent[0].tagName;
+      var parentLevel = $parent.parents(parentSelector).length;
+      return $parent.find(selector).filter (function () {
+        return parentLevel === $(this).closest(parentSelector).parents(parentSelector).length;
       });
     }
 
@@ -1546,7 +1447,7 @@
           $.inArray(rowIndex - rowCount, defaults.ignoreRow) === -1 &&
           isVisible($(tableRow))) {
 
-          var $cells = $(tableRow).find(selector);
+          var $cells = findTableElements($(tableRow), selector);
           var cellCount = 0;
 
           $cells.each(function (colIndex) {
@@ -1593,6 +1494,45 @@
                 cellcallback(null, rowIndex, cellCount++);
             }
           });
+        }
+      }
+    }
+
+    function jsPdfDrawImage (cell, container, imgId, teOptions) {
+      if ( typeof teOptions.images !== 'undefined' ) {
+        var image = teOptions.images[imgId];
+
+        if ( typeof image !== 'undefined' ) {
+          var r          = container.getBoundingClientRect();
+          var arCell     = cell.width / cell.height;
+          var arImg      = r.width / r.height;
+          var imgWidth   = cell.width;
+          var imgHeight  = cell.height;
+          var px2pt      = 0.264583 * 72 / 25.4;
+          var uy         = 0;
+
+          if ( arImg <= arCell ) {
+            imgHeight = Math.min(cell.height, r.height);
+            imgWidth  = r.width * imgHeight / r.height;
+          }
+          else if ( arImg > arCell ) {
+            imgWidth  = Math.min(cell.width, r.width);
+            imgHeight = r.height * imgWidth / r.width;
+          }
+
+          imgWidth *= px2pt;
+          imgHeight *= px2pt;
+
+          if ( imgHeight < cell.height )
+            uy = (cell.height - imgHeight) / 2;
+
+          try {
+            teOptions.doc.addImage(image.src, cell.textPos.x, cell.y + uy, imgWidth, imgHeight);
+          }
+          catch (e) {
+            // TODO: IE -> convert png to jpeg
+          }
+          cell.textPos.x += imgWidth;
         }
       }
     }
@@ -1664,89 +1604,106 @@
     }
 
     function collectImages (cell, elements, teOptions) {
-      if ( typeof teOptions.images !== 'undefined' ) {
-        elements.each(function () {
-          var kids = $(this).children();
+      if ( typeof cell !== 'undefined' && cell !== null ) {
 
-          if ( $(this).is("img") ) {
-            var hash = strHashCode(this.src);
+        if ( cell.hasAttribute("data-tableexport-canvas") ) {
+          var imgId = new Date().getTime();
+          $(cell).attr("data-tableexport-canvas", imgId);
 
-            teOptions.images[hash] = {
-              url: this.src,
-              src: this.src
-            };
-          }
-
-          if ( typeof kids !== 'undefined' && kids.length > 0 )
-            collectImages(cell, kids, teOptions);
-        });
+          teOptions.images[imgId] = {
+            url: '[data-tableexport-canvas="'+imgId+'"]',
+            src: null
+          };
+        }
+        else if (elements !== 'undefined' && elements != null) {
+          elements.each(function () {
+            if ($(this).is("img")) {
+              var imgId = strHashCode(this.src);
+              teOptions.images[imgId] = {
+                url: this.src,
+                src: this.src
+              };
+            }
+            collectImages(cell, $(this).children(), teOptions);
+          });
+        }
       }
     }
 
     function loadImages (teOptions, callback) {
-      var i;
       var imageCount = 0;
-      var x          = 0;
+      var pendingCount = 0;
 
       function done () {
         callback(imageCount);
       }
 
       function loadImage (image) {
-        if ( !image.url )
-          return;
-        var img         = new Image();
-        imageCount      = ++x;
-        img.crossOrigin = 'Anonymous';
-        img.onerror     = img.onload = function () {
-          if ( img.complete ) {
+        if (image.url) {
+          if (!image.src) {
+            var $imgContainer = $(image.url);
+            if ($imgContainer.length) {
+              imageCount = ++pendingCount;
 
-            if ( img.src.indexOf('data:image/') === 0 ) {
-              img.width  = image.width || img.width || 0;
-              img.height = image.height || img.height || 0;
-            }
-
-            if ( img.width + img.height ) {
-              var canvas = document.createElement("canvas");
-              var ctx    = canvas.getContext("2d");
-
-              canvas.width  = img.width;
-              canvas.height = img.height;
-              ctx.drawImage(img, 0, 0);
-
-              image.src = canvas.toDataURL("image/jpeg");
+              html2canvas($imgContainer[0]).then(function(canvas) {
+                image.src = canvas.toDataURL("image/png");
+                if ( !--pendingCount )
+                  done();
+              });
             }
           }
-          if ( !--x )
-            done();
-        };
-        img.src = image.url;
+          else {
+            var img = new Image();
+            imageCount = ++pendingCount;
+            img.crossOrigin = 'Anonymous';
+            img.onerror = img.onload = function () {
+              if ( img.complete ) {
+
+                if ( img.src.indexOf('data:image/') === 0 ) {
+                  img.width = image.width || img.width || 0;
+                  img.height = image.height || img.height || 0;
+                }
+
+                if ( img.width + img.height ) {
+                  var canvas = document.createElement("canvas");
+                  var ctx = canvas.getContext("2d");
+
+                  canvas.width = img.width;
+                  canvas.height = img.height;
+                  ctx.drawImage(img, 0, 0);
+
+                  image.src = canvas.toDataURL("image/png");
+                }
+              }
+              if ( !--pendingCount )
+                done();
+            };
+            img.src = image.url;
+          }
+        }
       }
 
       if ( typeof teOptions.images !== 'undefined' ) {
-        for ( i in teOptions.images )
+        for ( var i in teOptions.images )
           if ( teOptions.images.hasOwnProperty(i) )
             loadImage(teOptions.images[i]);
       }
 
-      return x || done();
+      return pendingCount || done();
     }
 
     function drawAutotableElements (cell, elements, teOptions) {
       elements.each(function () {
-        var kids = $(this).children();
-        var uy   = 0;
-
         if ( $(this).is("div") ) {
           var bcolor = rgb2array(getStyle(this, 'background-color'), [255, 255, 255]);
           var lcolor = rgb2array(getStyle(this, 'border-top-color'), [0, 0, 0]);
           var lwidth = getPropertyUnitValue(this, 'border-top-width', defaults.jspdf.unit);
 
           var r  = this.getBoundingClientRect();
-          var ux = this.offsetLeft * teOptions.dw;
-          uy = this.offsetTop * teOptions.dh;
-          var uw = r.width * teOptions.dw;
-          var uh = r.height * teOptions.dh;
+          var ux = this.offsetLeft * teOptions.wScaleFactor;
+          var uy = this.offsetTop * teOptions.hScaleFactor;
+          var uw = r.width * teOptions.wScaleFactor;
+          var uh = r.height * teOptions.hScaleFactor;
 
           teOptions.doc.setDrawColor.apply(undefined, lcolor);
           teOptions.doc.setFillColor.apply(undefined, bcolor);
@@ -1754,46 +1711,11 @@
           teOptions.doc.rect(cell.x + ux, cell.y + uy, uw, uh, lwidth ? "FD" : "F");
         }
         else if ( $(this).is("img") ) {
-          if ( typeof teOptions.images !== 'undefined' ) {
-            var hash  = strHashCode(this.src);
-            var image = teOptions.images[hash];
-
-            if ( typeof image !== 'undefined' ) {
-
-              var arCell    = cell.width / cell.height;
-              var arImg     = this.width / this.height;
-              var imgWidth  = cell.width;
-              var imgHeight = cell.height;
-              var px2pt     = 0.264583 * 72 / 25.4;
-
-              if ( arImg <= arCell ) {
-                imgHeight = Math.min(cell.height, this.height);
-                imgWidth  = this.width * imgHeight / this.height;
-              }
-              else if ( arImg > arCell ) {
-                imgWidth  = Math.min(cell.width, this.width);
-                imgHeight = this.height * imgWidth / this.width;
-              }
-
-              imgWidth *= px2pt;
-              imgHeight *= px2pt;
-
-              if ( imgHeight < cell.height )
-                uy = (cell.height - imgHeight) / 2;
-
-              try {
-                teOptions.doc.addImage(image.src, cell.textPos.x, cell.y + uy, imgWidth, imgHeight);
-              }
-              catch (e) {
-                // TODO: IE -> convert png to jpeg
-              }
-              cell.textPos.x += imgWidth;
-            }
-          }
+          var imgId  = strHashCode(this.src);
+          jsPdfDrawImage (cell, this, imgId, teOptions);
         }
 
-        if ( typeof kids !== 'undefined' && kids.length > 0 )
-          drawAutotableElements(cell, kids, teOptions);
+        drawAutotableElements(cell, $(this).children(), teOptions);
       });
     }
 
@@ -1928,9 +1850,12 @@
         var $cell = $(cell);
         var htmlData;
 
-        if ( $cell[0].hasAttribute("data-tableexport-value") ) {
+        if ( $cell[0].hasAttribute("data-tableexport-canvas") ) {
+          htmlData = '';
+        }
+        else if ( $cell[0].hasAttribute("data-tableexport-value") ) {
           htmlData = $cell.data("tableexport-value");
-          htmlData = htmlData ? htmlData + '' : ''
+          htmlData = htmlData ? htmlData + '' : '';
         }
         else {
           htmlData = $cell.html();
@@ -1969,7 +1894,7 @@
           var cellFormat = $(cell).data("tableexport-cellformat");
 
           if ( cellFormat !== '' ) {
-            var text   = htmlData.replace(/\n/g, '\u2028').replace(/<br\s*[\/]?>/gi, '\u2060');
+            var text   = htmlData.replace(/\n/g, '\u2028').replace(/(<\s*br([^>]*)>)/gi, '\u2060');
             var obj    = $('<div/>').html(text).contents();
             var number = false;
             text       = '';
@@ -2220,6 +2145,32 @@
       return hash;
     }
 
+    function saveToFile (data, fileName, type, charset, encoding, bom) {
+      var saveIt = true;
+      if ( typeof defaults.onBeforeSaveToFile === 'function' ) {
+        saveIt = defaults.onBeforeSaveToFile(data, fileName, type, charset, encoding);
+        if ( typeof saveIt !== 'boolean' )
+          saveIt = true;
+      }
+
+      if (saveIt) {
+        try {
+          blob = new Blob([data], {type: type + ';charset=' + charset});
+          saveAs (blob, fileName, bom === false);
+
+          if ( typeof defaults.onAfterSaveToFile === 'function' )
+            defaults.onAfterSaveToFile(data, fileName);
+        }
+        catch (e) {
+          downloadFile (fileName, 
+                        'data:' + type + 
+                        (charset.length ? ';charset=' + charset : '') +
+                        (encoding.length ? ';' + encoding : '') + ',' + (bom ? '\ufeff' : ''), 
+                        data);
+        }
+      }
+    }
+
     function downloadFile (filename, header, data) {
       var ua = window.navigator.userAgent;
       if ( filename !== false && window.navigator.msSaveOrOpenBlob ) {
@@ -2264,7 +2215,9 @@
 
           if ( typeof data === 'object' ) {
             window.URL = window.URL || window.webkitURL;
-            blobUrl = window.URL.createObjectURL(data);
+            var binaryData = [];
+            binaryData.push(data);
+            blobUrl = window.URL.createObjectURL(new Blob(binaryData, {type: header}));
             DownloadLink.href = blobUrl;
           }
           else if ( header.toLowerCase().indexOf("base64,") >= 0 )
@@ -2290,6 +2243,9 @@
             if ( blobUrl )
               window.URL.revokeObjectURL(blobUrl);
             document.body.removeChild(DownloadLink);
+
+            if ( typeof defaults.onAfterSaveToFile === 'function' )
+              defaults.onAfterSaveToFile(data, filename);
           }, 100);
         }
       }

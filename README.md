@@ -8,7 +8,7 @@ FastAdmin是一款基于ThinkPHP5+Bootstrap的极速后台开发框架。
     * 支持单管理员多角色
     * 支持管理子级数据或个人数据
 * 强大的一键生成功能
-    * 一键生成CRUD,包括控制器、模型、视图、JS、语言包、菜单等
+    * 一键生成CRUD,包括控制器、模型、视图、JS、语言包、菜单、回收站等
     * 一键压缩打包JS和CSS文件，一键CDN静态资源部署
     * 一键生成控制器菜单和规则
     * 一键生成API接口文档
@@ -23,12 +23,13 @@ FastAdmin是一款基于ThinkPHP5+Bootstrap的极速后台开发框架。
 * 共用同一账号体系的Web端会员中心权限验证和API接口会员权限验证
 * 二级域名部署支持，同时域名支持绑定到插件
 * 多语言支持，服务端及客户端支持
-* 强大的第三方模块支持([CMS](https://www.fastadmin.net/store/cms.html)、[博客](https://www.fastadmin.net/store/blog.html)、[文档生成](https://www.fastadmin.net/store/docs.html)、[个人免签支付](https://www.fastadmin.net/store/pay.html))
-* 整合第三方短信接口(阿里云、创蓝短信)
+* 强大的第三方模块支持([CMS](https://www.fastadmin.net/store/cms.html)、[博客](https://www.fastadmin.net/store/blog.html)、[知识付费问答](https://www.fastadmin.net/store/ask.html))
+* 整合第三方短信接口(阿里云、腾讯云短信)
 * 无缝整合第三方云存储(七牛、阿里云OSS、又拍云)功能
-* 第三方富文本编辑器支持(Summernote、Tinymce、百度编辑器)
+* 第三方富文本编辑器支持(Summernote、Kindeditor、百度编辑器)
 * 第三方登录(QQ、微信、微博)整合
-* Ucenter整合第三方应用
+* 第三方支付(微信、支付宝)无缝整合，微信支持PC端扫码支付
+* 丰富的插件应用市场
 
 ## **安装使用**
 
@@ -53,7 +54,7 @@ https://demo.fastadmin.net
 
 交流社区: https://forum.fastadmin.net
 
-QQ群: [636393962](https://jq.qq.com/?_wv=1027&k=487PNBb)(交流群①) [708784003](https://jq.qq.com/?_wv=1027&k=5ObjtwM)(交流群②) [696992864](https://jq.qq.com/?_wv=1027&k=5R2AB00)(高级群,邀请加入)
+QQ群: [636393962](https://jq.qq.com/?_wv=1027&k=487PNBb)(满) [708784003](https://jq.qq.com/?_wv=1027&k=5ObjtwM)(满) [964776039](https://jq.qq.com/?_wv=1027&k=59qjU2P)(3群)
 
 Email: (karsonzhang#163.com, 把#换成@)
 
@@ -86,6 +87,6 @@ FastAdmin遵循Apache2开源协议发布，并提供免费使用。
 
 本项目包含的第三方源码和二进制文件之版权信息另行标注。
 
-版权所有Copyright © 2017-2018 by FastAdmin (https://www.fastadmin.net)
+版权所有Copyright © 2017-2019 by FastAdmin (https://www.fastadmin.net)
 
 All rights reserved。

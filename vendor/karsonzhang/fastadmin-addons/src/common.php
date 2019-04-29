@@ -93,7 +93,7 @@ Hook::add('app_init', function () {
             Hook::exec($v, 'app_init');
         }
     }
-    Hook::import($hooks, true);
+    Hook::import($hooks, false);
 });
 
 /**
@@ -297,7 +297,7 @@ function get_addon_instance($name)
 
 /**
  * 插件显示内容里生成访问插件的url
- * @param string $url 地址 格式：插件名/控制器/方法
+ * @param $url 地址 格式：插件名/控制器/方法
  * @param array $vars 变量参数
  * @param bool|string $suffix 生成的URL后缀
  * @param bool|string $domain 域名

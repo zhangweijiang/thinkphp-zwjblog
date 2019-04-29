@@ -45,6 +45,32 @@ class Menu extends Backend
     {
         $menu = $this->request->post("menu");
         $menu = (array)json_decode($menu, TRUE);
+        foreach ($menu as $index => &$item) {
+            if (isset($item['sub_button'])) {
+                foreach ($item['sub_button'] as &$subitem) {
+                    if ($subitem['type'] == 'view') {
+                        $allowFields = ['type', 'name', 'url'];
+                        $subitem = ['type' => $subitem['type'], 'name' => $subitem['name'], 'url' => $subitem['url']];
+                    } else if ($subitem['type'] == 'miniprogram') {
+                        $allowFields = ['type', 'name', 'url', 'appid', 'pagepath'];
+                        $subitem = ['type' => $subitem['type'], 'name' => $subitem['name'], 'url' => $subitem['url'], 'appid' => $subitem['appid'], 'pagepath' => $subitem['pagepath']];
+                    } else {
+                        $allowFields = ['type', 'name', 'key'];
+                        $subitem = ['type' => $item['type'], 'name' => $subitem['name'], 'key' => $subitem['key']];
+                    }
+                    $subitem = array_intersect_key($subitem, array_flip($allowFields));
+                }
+            } else {
+                if ($item['type'] == 'view') {
+                    $allowFields = ['type', 'name', 'url'];
+                } else if ($item['type'] == 'miniprogram') {
+                    $allowFields = ['type', 'name', 'url', 'appid', 'pagepath'];
+                } else {
+                      $allowFields = ['type', 'name', 'key'];
+            }
+                $item = array_intersect_key($item, array_flip($allowFields));
+            }
+        }
         $this->wechatcfg->value = json_encode($menu, JSON_UNESCAPED_UNICODE);
         $this->wechatcfg->save();
         $this->success();
@@ -62,18 +88,22 @@ class Menu extends Backend
             foreach ($menu as $k => $v) {
                 if (isset($v['sub_button'])) {
                     foreach ($v['sub_button'] as $m => $n) {
-                        if (isset($n['key']) && !$n['key']) {
+                        if ($n['type'] == 'click' && isset($n['key']) && !$n['key']) {
                             $hasError = true;
                             break 2;
                         }
                     }
-                } else if (isset($v['key']) && !$v['key']) {
+                } else if ($v['type'] == 'click' && isset($v['key']) && !$v['key']) {
                     $hasError = true;
                     break;
                 }
             }
             if (!$hasError) {
-                $ret = $app->menu->add($menu);
+                try {
+                    $ret = $app->menu->add($menu);
+                } catch (\EasyWeChat\Core\Exceptions\HttpException $e) {
+                    $this->error($e->getMessage());
+                }
                 if ($ret->errcode == 0) {
                     $this->success();
                 } else {

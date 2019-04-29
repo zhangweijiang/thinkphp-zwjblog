@@ -14,7 +14,6 @@ use think\Validate;
  */
 class User extends Frontend
 {
-
     protected $layout = 'default';
     protected $noNeedLogin = ['login', 'register', 'third'];
     protected $noNeedRight = ['*'];
@@ -26,11 +25,6 @@ class User extends Frontend
 
         if (!Config::get('fastadmin.usercenter')) {
             $this->error(__('User center already closed'));
-        }
-
-        $ucenter = get_addon_info('ucenter');
-        if ($ucenter && $ucenter['state']) {
-            include ADDON_PATH . 'ucenter' . DS . 'uc.php';
         }
 
         //监听注册登录注销的事件
@@ -82,8 +76,9 @@ class User extends Frontend
     public function register()
     {
         $url = $this->request->request('url');
-        if ($this->auth->id)
-            $this->success(__('You\'ve logged in, do not login again'), $url);
+        if ($this->auth->id) {
+            $this->success(__('You\'ve logged in, do not login again'), $url ? $url : url('user/index'));
+        }
         if ($this->request->isPost()) {
             $username = $this->request->post('username');
             $password = $this->request->post('password');
@@ -124,13 +119,7 @@ class User extends Frontend
                 $this->error(__($validate->getError()), null, ['token' => $this->request->token()]);
             }
             if ($this->auth->register($username, $password, $email, $mobile)) {
-                $synchtml = '';
-                ////////////////同步到Ucenter////////////////
-                if (defined('UC_STATUS') && UC_STATUS) {
-                    $uc = new \addons\ucenter\library\client\Client();
-                    $synchtml = $uc->uc_user_synregister($this->auth->id, $password);
-                }
-                $this->success(__('Sign up successful') . $synchtml, $url ? $url : url('user/index'));
+                $this->success(__('Sign up successful'), $url ? $url : url('user/index'));
             } else {
                 $this->error($this->auth->getError(), null, ['token' => $this->request->token()]);
             }
@@ -152,8 +141,9 @@ class User extends Frontend
     public function login()
     {
         $url = $this->request->request('url');
-        if ($this->auth->id)
-            $this->success(__('You\'ve logged in, do not login again'), $url);
+        if ($this->auth->id) {
+            $this->success(__('You\'ve logged in, do not login again'), $url ? $url : url('user/index'));
+        }
         if ($this->request->isPost()) {
             $account = $this->request->post('account');
             $password = $this->request->post('password');
@@ -180,16 +170,10 @@ class User extends Frontend
             $result = $validate->check($data);
             if (!$result) {
                 $this->error(__($validate->getError()), null, ['token' => $this->request->token()]);
-                return FALSE;
+                return false;
             }
             if ($this->auth->login($account, $password)) {
-                $synchtml = '';
-                ////////////////同步到Ucenter////////////////
-                if (defined('UC_STATUS') && UC_STATUS) {
-                    $uc = new \addons\ucenter\library\client\Client();
-                    $synchtml = $uc->uc_user_synlogin($this->auth->id);
-                }
-                $this->success(__('Logged in successful') . $synchtml, $url ? $url : url('user/index'));
+                $this->success(__('Logged in successful'), $url ? $url : url('user/index'));
             } else {
                 $this->error($this->auth->getError(), null, ['token' => $this->request->token()]);
             }
@@ -208,17 +192,11 @@ class User extends Frontend
     /**
      * 注销登录
      */
-    function logout()
+    public function logout()
     {
         //注销本站
         $this->auth->logout();
-        $synchtml = '';
-        ////////////////同步到Ucenter////////////////
-        if (defined('UC_STATUS') && UC_STATUS) {
-            $uc = new \addons\ucenter\library\client\Client();
-            $synchtml = $uc->uc_user_synlogout();
-        }
-        $this->success(__('Logout successful') . $synchtml, url('user/index'));
+        $this->success(__('Logout successful'), url('user/index'));
     }
 
     /**
@@ -264,18 +242,12 @@ class User extends Frontend
             $result = $validate->check($data);
             if (!$result) {
                 $this->error(__($validate->getError()), null, ['token' => $this->request->token()]);
-                return FALSE;
+                return false;
             }
 
             $ret = $this->auth->changepwd($newpassword, $oldpassword);
             if ($ret) {
-                $synchtml = '';
-                ////////////////同步到Ucenter////////////////
-                if (defined('UC_STATUS') && UC_STATUS) {
-                    $uc = new \addons\ucenter\library\client\Client();
-                    $synchtml = $uc->uc_user_synlogout();
-                }
-                $this->success(__('Reset password successful') . $synchtml, url('user/login'));
+                $this->success(__('Reset password successful'), url('user/login'));
             } else {
                 $this->error($this->auth->getError(), null, ['token' => $this->request->token()]);
             }
@@ -283,5 +255,4 @@ class User extends Frontend
         $this->view->assign('title', __('Change password'));
         return $this->view->fetch();
     }
-
 }

@@ -7,6 +7,7 @@ use think\Config;
 use think\Controller;
 use think\Hook;
 use think\Lang;
+use think\Loader;
 
 /**
  * 前台控制器基类
@@ -41,9 +42,9 @@ class Frontend extends Controller
     public function _initialize()
     {
         //移除HTML标签
-        $this->request->filter('strip_tags');
+        $this->request->filter('trim,strip_tags,htmlspecialchars');
         $modulename = $this->request->module();
-        $controllername = strtolower($this->request->controller());
+        $controllername = Loader::parseName($this->request->controller());
         $actionname = strtolower($this->request->action());
 
         // 如果有使用模板布局
@@ -64,7 +65,7 @@ class Frontend extends Controller
             $this->auth->init($token);
             //检测是否登录
             if (!$this->auth->isLogin()) {
-                $this->error(__('Please login first'), 'user/login');
+                $this->error(__('Please login first'), 'index/user/login');
             }
             // 判断是否需要验证权限
             if (!$this->auth->match($this->noNeedRight)) {
@@ -126,12 +127,11 @@ class Frontend extends Controller
 
     /**
      * 渲染配置信息
-     * @param mixed $name 键名或数组
+     * @param mixed $name  键名或数组
      * @param mixed $value 值
      */
     protected function assignconfig($name, $value = '')
     {
         $this->view->config = array_merge($this->view->config ? $this->view->config : [], is_array($name) ? $name : [$name => $value]);
     }
-
 }

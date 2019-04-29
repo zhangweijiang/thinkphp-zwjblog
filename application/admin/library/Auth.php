@@ -12,7 +12,6 @@ use think\Session;
 
 class Auth extends \fast\Auth
 {
-
     protected $_error = '';
     protected $requestUri = '';
     protected $breadcrumb = [];
@@ -33,7 +32,7 @@ class Auth extends \fast\Auth
      *
      * @param   string $username 用户名
      * @param   string $password 密码
-     * @param   int $keeptime 有效时长
+     * @param   int    $keeptime 有效时长
      * @return  boolean
      */
     public function login($username, $password, $keeptime = 0)
@@ -77,6 +76,7 @@ class Auth extends \fast\Auth
         }
         $admin->token = '';
         $admin->save();
+        $this->logined = false; //重置登录状态
         Session::delete("admin");
         Cookie::delete("keeplogin");
         return true;
@@ -145,17 +145,17 @@ class Auth extends \fast\Auth
         $request = Request::instance();
         $arr = is_array($arr) ? $arr : explode(',', $arr);
         if (!$arr) {
-            return FALSE;
+            return false;
         }
 
         $arr = array_map('strtolower', $arr);
         // 是否存在
         if (in_array(strtolower($request->action()), $arr) || in_array('*', $arr)) {
-            return TRUE;
+            return true;
         }
 
         // 没找到匹配
-        return FALSE;
+        return false;
     }
 
     /**
@@ -228,7 +228,7 @@ class Auth extends \fast\Auth
 
     public function isSuperAdmin()
     {
-        return in_array('*', $this->getRuleIds()) ? TRUE : FALSE;
+        return in_array('*', $this->getRuleIds()) ? true : false;
     }
 
     /**
@@ -321,8 +321,9 @@ class Auth extends \fast\Auth
      */
     public function getBreadCrumb($path = '')
     {
-        if ($this->breadcrumb || !$path)
+        if ($this->breadcrumb || !$path) {
             return $this->breadcrumb;
+        }
         $path_rule_id = 0;
         foreach ($this->rules as $rule) {
             $path_rule_id = $rule['name'] == $path ? $rule['id'] : $path_rule_id;
@@ -340,7 +341,7 @@ class Auth extends \fast\Auth
     /**
      * 获取左侧和顶部菜单栏
      *
-     * @param array $params URL对应的badge数据
+     * @param array  $params    URL对应的badge数据
      * @param string $fixedPage 默认页
      * @return array
      */
@@ -454,5 +455,4 @@ class Auth extends \fast\Auth
     {
         return $this->_error ? __($this->_error) : '';
     }
-
 }
